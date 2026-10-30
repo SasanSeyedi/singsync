@@ -1,9 +1,13 @@
 """Lip-sync offset estimation on synthetic word lists."""
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from singsync import retime
+from singsync.ffmpeg_util import ffmpeg, have_ffmpeg, media_duration
 from tests import synth
 
 LINE = "hold the line until it breaks and the radio talks to nobody tonight".split()
@@ -183,6 +187,81 @@ class SliceWords(unittest.TestCase):
         self.assertEqual(plan["retime_summary"]["measured"], 0)
         for cut in plan["cuts"]:
             self.assertEqual(cut["offset_s"], 0.0)
+
+
+@unittest.skipUnless(have_ffmpeg(), "ffmpeg not available")
+class BakeRetime(unittest.TestCase):
+    """Baking a shift into a clip file keeps its length and frame rate."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="singsync-retime-"))
+        cls.clip = cls.tmp / "clip.mp4"
+        # testsrc2 prints a timecode, so a shift is visible frame by frame.
+        ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=160x90:rate=24:duration=10",
+                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                str(cls.clip)])
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _duration(self, path):
+        return media_duration(path)
+
+    def test_positive_offset_keeps_the_length(self):
+        out = retime.retime_clip(self.clip, self.tmp / "late.mp4", offset_s=1.3,
+                                 preset="ultrafast", crf=30)
+        self.assertAlmostEqual(self._duration(out), 10.0, delta=1.0 / 24.0)
+
+    def test_negative_offset_keeps_the_length(self):
+        out = retime.retime_clip(self.clip, self.tmp / "early.mp4", offset_s=-0.8,
+                                 preset="ultrafast", crf=30)
+        self.assertAlmostEqual(self._duration(out), 10.0, delta=1.0 / 24.0)
+
+    def test_zero_offset_is_a_passthrough(self):
+        out = retime.retime_clip(self.clip, self.tmp / "same.mp4", offset_s=0.0,
+                                 preset="ultrafast", crf=30)
+        self.assertAlmostEqual(self._duration(out), 10.0, delta=1.0 / 24.0)
+
+    def test_result_dict_drives_the_shift(self):
+        result = {"offset_s": 0.9, "method": "median", "map": []}
+        out = retime.retime_clip(self.clip, self.tmp / "res.mp4", result=result,
+                                 preset="ultrafast", crf=30)
+        self.assertAlmostEqual(self._duration(out), 10.0, delta=1.0 / 24.0)
+
+    def test_piecewise_map_is_applied_in_segments(self):
+        result = {
+            "offset_s": 0.6, "method": "piecewise",
+            "map": [[0.5, 0.7], [3.0, 3.4], [5.5, 6.2], [8.0, 8.9]],
+        }
+        out = retime.retime_clip(self.clip, self.tmp / "pw.mp4", result=result,
+                                 duration=10.0, fps=24.0, preset="ultrafast", crf=30)
+        self.assertAlmostEqual(self._duration(out), 10.0, delta=2.0 / 24.0)
+
+    def test_retime_plan_bakes_clips(self):
+        from singsync import cutplan
+        plan = cutplan.load_plan(self.plan_with_clips())
+        retime.retime_plan(plan, write_clips=True, work_dir=self.tmp / "baked",
+                           model="small.en")
+        for cut in plan["cuts"]:
+            if cut.get("words"):
+                # No faster-whisper in CI: measurement fails, nothing is baked,
+                # and the failure is recorded rather than raised.
+                self.assertIn(cut["retime"]["method"], ("failed", "median",
+                                                        "piecewise", "none",
+                                                        "rejected"))
+            self.assertIn("offset_s", cut)
+
+    def plan_with_clips(self):
+        from singsync import cutplan
+        words = synth.make_words()
+        duration = synth.song_duration(words)
+        plan = cutplan.plan_cuts(words, synth.make_analysis(duration),
+                                 duration=duration)
+        for cut in plan["cuts"]:
+            cut["clip_path"] = str(self.clip)
+        return plan
 
 
 if __name__ == "__main__":

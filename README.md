@@ -152,7 +152,7 @@ where the clip came from.
 python -m unittest discover -s tests -t .
 ```
 
-135 tests, stdlib `unittest` only. Tests that need ffmpeg skip themselves when
+141 tests, stdlib `unittest` only. Tests that need ffmpeg skip themselves when
 it is absent; nothing needs ComfyUI, torch, a GPU or a network.
 
 ## Licence

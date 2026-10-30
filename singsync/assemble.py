@@ -73,6 +73,8 @@ def segment_plan(plan: dict, fps: float = 24.0) -> list[dict]:
         segments.append({
             "idx": int(cut.get("idx", 0)),
             "clip": clip,
+            "retimed": bool(clip and cut.get("retimed_path")
+                            and str(clip) == str(cut["retimed_path"])),
             "clip_start": round(max(0.0, clip_start), 6),
             "pad_start_s": round(pad_start, 6),
             "frames": frames,
@@ -254,17 +256,22 @@ def write_fcpxml(plan: dict, out_path: str | Path, *, fps: float = 24.0) -> str:
 
 def assembly_report(plan: dict, fps: float = 24.0) -> str:
     """Human-readable table of what assembly will take from each clip."""
+    segments = segment_plan(plan, fps)
     rows = ["idx  owns            frames  clip in   offset  source"]
     rows.append("-" * len(rows[0]))
-    for seg in segment_plan(plan, fps):
+    for seg in segments:
+        source = "MISSING"
+        if seg["clip"]:
+            source = Path(seg["clip"]).name
+            if seg["retimed"]:
+                source += " (retimed)"
         rows.append("%3d  %6.2f-%6.2f %6d  %7.3f  %+6.3f  %s" % (
             seg["idx"], seg["owns_start"], seg["owns_end"], seg["frames"],
-            seg["clip_start"], seg["offset_s"],
-            Path(seg["clip"]).name if seg["clip"] else "MISSING"))
-    total = sum(s["frames"] for s in segment_plan(plan, fps))
+            seg["clip_start"], seg["offset_s"], source))
+    total = sum(s["frames"] for s in segments)
     rows.append("-" * len(rows[0]))
     rows.append("%d segments, %d frames = %.3fs at %gfps (song %.3fs)" % (
-        len(segment_plan(plan, fps)), total, total / float(fps), fps,
+        len(segments), total, total / float(fps), fps,
         float(plan.get("duration", 0.0))))
     return "\n".join(rows)
 
