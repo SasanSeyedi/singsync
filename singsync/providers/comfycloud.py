@@ -149,8 +149,15 @@ class ComfyCloud:
         if isinstance(h,list): h=h[0] if h else {}
         outputs=h.get("outputs",{}) if isinstance(h,dict) else {}
         for value in outputs.values():
-            for item in value.get("videos",[]) + value.get("gifs",[]):
-                return {k:item[k] for k in ("filename","subfolder","type") if k in item}
+            # Comfy Cloud lists SaveVideo results under "images" (with metadata.kind == "video");
+            # local ComfyUI uses "videos"/"gifs". Accept all three.
+            for item in value.get("videos", []) + value.get("gifs", []) + value.get("images", []):
+                if not isinstance(item, dict):
+                    continue
+                kind = (item.get("metadata") or {}).get("kind")
+                name = str(item.get("filename", ""))
+                if kind == "video" or name.lower().endswith((".mp4", ".webm", ".mov", ".gif")):
+                    return {k: item[k] for k in ("filename", "subfolder", "type") if k in item}
         return None
 
     def _raise_redacted(self, message):
