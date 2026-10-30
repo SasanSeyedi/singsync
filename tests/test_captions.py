@@ -8,6 +8,17 @@ from tests import synth
 
 
 class AssText(unittest.TestCase):
+    def test_lyric_corrected_words_group_by_lyric_line(self):
+        from singsync.align import apply_lyrics
+        fixed = apply_lyrics([
+            {"word": "helo", "start": 0.0, "end": 0.4},
+            {"word": "wrld", "start": 0.6, "end": 1.0}], "Hello world!\nAgain")
+        self.assertEqual([line[0]["line_idx"] for line in captions.group_lines(fixed)], [0, 1])
+        ass = captions.build_ass(fixed)
+        self.assertIn("Hello", ass)
+        self.assertIn("world!", ass)
+        self.assertIn("Again", ass)
+
     def setUp(self):
         self.words = synth.make_words()
 

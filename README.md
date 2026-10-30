@@ -109,7 +109,9 @@ stage at a time. `--help` lists the planner and prompt options.
 `KIE_API_KEY` environment variable and never written to the plan, the logs or
 the work directory. Seedance 2 through kie accepts clip durations of 5, 10 or 15
 seconds; SingSync defaults to a 12-second cap on the fed audio and picks the
-smallest bucket that covers each span. Seedance 2.5 takes 4–30 seconds — pass
+smallest bucket covering the fed span plus 3 seconds of headroom. Configure it
+with the Cut Plan `headroom_s` widget or CLI `--headroom`. Seedance 2.5 takes
+4–30 seconds — pass
 `--max-clip 30 --durations 4,...,30` (or set the two widgets) to use it.
 
 **ComfyUI's own Seedance 2.5 reference-to-video node** also takes audio clips.
@@ -132,9 +134,8 @@ where the clip came from.
 - **Discrete clip buckets cost renderer seconds.** A 10.2s audio span becomes a
   15s clip. Narrowing the target (`--target 8 --max-clip 10 --durations 5,10`)
   trades shot length for render budget.
-- **Piecewise retiming is only applied when clips are baked** (`--bake-retime`
-  / the *write_retimed_clips* widget). Otherwise the constant median offset is
-  used, which is what a per-clip error usually is.
+- **Repeated sung material is splice-retimed** from anchor clusters; ordinary
+  single-cluster cuts retain the constant offset behavior.
 - **Character consistency** is whatever the reference image and the repeated
   prompt text give you. SingSync keeps the character and scene text identical
   across cuts; it does nothing else to hold a face steady.

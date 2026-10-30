@@ -49,6 +49,22 @@ class FrameGrid(unittest.TestCase):
             self.assertEqual(total, assemble.frame_index(self.duration, fps))
             self.assertAlmostEqual(total / fps, self.duration, delta=1.0 / fps)
 
+    def test_splice_segments_keep_owned_frame_total(self):
+        plan = {"cuts": [{"idx": 0, "audio_start": 0.0, "owns_start": 0.0,
+            "owns_end": 8.0, "retime": {"offset_s": 0.0, "segments": [
+                {"slice_start": 0.0, "slice_end": 3.0, "clip_start": 0.0},
+                {"slice_start": 3.0, "slice_end": None, "clip_start": 6.3}]}}]}
+        parts = assemble.segment_plan(plan, 24)
+        self.assertEqual([p["frames"] for p in parts], [72, 120])
+        self.assertEqual([p["clip_start"] for p in parts], [0.0, 6.3])
+
+    def test_short_clip_window_slides_earlier(self):
+        cut = {}
+        segment = {"clip_start": 6.9, "duration_s": 2.1}
+        assemble.slide_short_trim(cut, segment, 7.0)
+        self.assertAlmostEqual(segment["clip_start"], 4.9)
+        self.assertEqual(cut["assembly_warning"], "slid 2.00 s earlier to avoid freeze")
+
     def test_segments_are_contiguous_on_the_grid(self):
         fps = 24.0
         segments = assemble.segment_plan(self.plan, fps)

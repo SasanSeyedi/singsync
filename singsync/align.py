@@ -44,6 +44,46 @@ def tokenise_lyrics(lyrics_text: str) -> list[dict]:
     return lines
 
 
+def apply_lyrics(words, lyrics_text: str) -> list[dict]:
+    """Replace Whisper tokens with supplied lyric spelling and fill missed tokens."""
+    import copy
+    source = sorted((copy.deepcopy(w) for w in (words or [])), key=lambda w: float(w["start"]))
+    lines = tokenise_lyrics(lyrics_text)
+    flat = [(token, line["line_idx"], display)
+            for line in lines for display in line["text"].split()
+            for token in [normalise_word(display)] if token]
+    heard = [normalise_word(w.get("word", "")) for w in source]
+    target = [x[0] for x in flat]
+    matcher = SequenceMatcher(None, heard, target, autojunk=False)
+    matched = {}
+    insertions = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for i, j in zip(range(i1, i2), range(j1, j2)):
+                matched[j] = source[i]
+        elif tag in ("insert", "replace"):
+            insertions.extend((j, i1, i2) for j in range(j1, j2))
+    for j, i1, i2 in insertions:
+        left = source[i1-1] if i1 else None
+        right = source[i2] if i2 < len(source) else None
+        lo = float(left["end"]) if left else (float(right["start"]) if right else 0.0)
+        hi = float(right["start"]) if right else lo
+        group = [x[0] for x in insertions if x[1:] == (i1, i2)]
+        pos = group.index(j) if j in group else 0
+        count = len(group)
+        start = lo + (hi-lo) * pos / max(count, 1)
+        end = lo + (hi-lo) * (pos+1) / max(count, 1)
+        matched[j] = {"word": flat[j][2], "start": round(start, 4), "end": round(end, 4)}
+    output = []
+    for j, (token, line_idx, display) in enumerate(flat):
+        w = dict(matched[j])
+        w.update(word=display, line_idx=line_idx, line_end=False)
+        output.append(w)
+    for i, word in enumerate(output):
+        word["line_end"] = i + 1 == len(output) or output[i+1]["line_idx"] != word["line_idx"]
+    return output
+
+
 def _lines_from_gaps(words: list[dict], gap_s: float, max_words: int) -> None:
     """Assign ``line_idx`` from pauses when no lyrics are available."""
     line_idx = 0

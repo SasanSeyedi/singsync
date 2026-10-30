@@ -167,6 +167,8 @@ class SingSyncSongAnalyze:
         if transcribe:
             alignment = align.transcribe_words(
                 vocal_file, lyrics or None, model=whisper_model, device=device)
+            if lyrics:
+                alignment["words"] = align.apply_lyrics(alignment.get("words", []), lyrics)
 
         plan = {
             "run_id": run_id,
@@ -206,6 +208,7 @@ class SingSyncCutPlan:
                 "max_clip_seconds": ("FLOAT", {"default": 12.0, "min": 2.0, "max": 30.0,
                                                "step": 0.5}),
                 "allowed_durations": ("STRING", {"default": "5,10,15"}),
+                "headroom_s": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 30.0, "step": 0.5}),
                 "snap_tolerance": ("FLOAT", {"default": 0.25, "min": 0.0, "max": 2.0,
                                              "step": 0.05}),
                 "snap_prefer": (["downbeat", "beat", "none"], {"default": "downbeat"}),
@@ -220,7 +223,7 @@ class SingSyncCutPlan:
     CATEGORY = "SingSync"
 
     def build(self, plan, target_seconds=9.0, overlap_words=2, max_clip_seconds=12.0,
-              allowed_durations="5,10,15", snap_tolerance=0.25, snap_prefer="downbeat",
+              allowed_durations="5,10,15", headroom_s=3.0, snap_tolerance=0.25, snap_prefer="downbeat",
               broll_gap_seconds=4.0):
         from . import cutplan
 
@@ -232,6 +235,7 @@ class SingSyncCutPlan:
             snap=snap_prefer != "none",
             target_owned_s=target_seconds, overlap_words=overlap_words,
             max_audio_s=max_clip_seconds, allowed_durations=allowed_durations,
+            headroom_s=headroom_s,
             snap_tol_s=snap_tolerance,
             snap_prefer="beat" if snap_prefer == "beat" else "downbeat",
             gap_broll_s=broll_gap_seconds)

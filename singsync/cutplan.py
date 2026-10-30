@@ -30,6 +30,7 @@ DEFAULTS = {
     "max_audio_s": 12.0,         # hard renderer limit on the fed audio span
     "overlap_words": 2,          # shared words fed into each neighbour
     "allowed_durations": (5.0, 10.0, 15.0),
+    "headroom_s": 3.0,
     "gap_broll_s": 4.0,          # longer vocal gap -> instrumental/b-roll cut
     "line_snap_frac": 0.6,       # accept a line end this far from the target
     "snap_tol_s": 0.25,          # beat snapping tolerance
@@ -53,9 +54,10 @@ def parse_durations(spec) -> tuple[float, ...]:
     return tuple(out)
 
 
-def pick_duration(span_s: float, allowed) -> float:
-    """Smallest allowed clip duration that covers ``span_s``."""
+def pick_duration(span_s: float, allowed, headroom_s: float = 0.0) -> float:
+    """Smallest allowed clip duration covering the fed span and headroom."""
     allowed = parse_durations(allowed)
+    span_s = float(span_s) + max(0.0, float(headroom_s))
     for value in allowed:
         if value >= span_s - 1e-6:
             return value
@@ -71,6 +73,7 @@ def _config(overrides: dict) -> dict:
     cfg["overlap_words"] = max(0, int(cfg["overlap_words"]))
     cfg["target_owned_s"] = float(cfg["target_owned_s"])
     cfg["max_audio_s"] = float(cfg["max_audio_s"])
+    cfg["headroom_s"] = max(0.0, float(cfg["headroom_s"]))
     cfg["gap_broll_s"] = max(0.25, float(cfg["gap_broll_s"]))
     cfg["line_snap_frac"] = max(0.0, float(cfg["line_snap_frac"]))
     # The renderer cannot be fed more than it can output.
@@ -399,7 +402,7 @@ def _make_cut(words, region, group, cfg, analysis, alignment) -> dict:
         "owns": [round(owns_start, 4), round(owns_end, 4)],
         "audio_start": round(max(0.0, audio_start), 4),
         "audio_end": round(audio_end, 4),
-        "duration": pick_duration(audio_end - audio_start, cfg["allowed_durations"]),
+        "duration": pick_duration(audio_end - audio_start, cfg["allowed_durations"], cfg["headroom_s"]),
         "words": group_words,
         "shared_words_before": before,
         "shared_words_after": after,
@@ -426,7 +429,7 @@ def _refresh_after_snap(plan: dict, cfg: dict, analysis: dict) -> None:
         cut["audio_end"] = round(max(cut["audio_end"], cut["owns_end"]), 4)
         cut["audio_span"] = round(cut["audio_end"] - cut["audio_start"], 4)
         cut["owns_span"] = round(cut["owns_end"] - cut["owns_start"], 4)
-        cut["duration"] = pick_duration(cut["audio_span"], cfg["allowed_durations"])
+        cut["duration"] = pick_duration(cut["audio_span"], cfg["allowed_durations"], cfg["headroom_s"])
         if analysis:
             cut["vibe"] = beats.vibe_brief(analysis, cut)
 
@@ -510,6 +513,7 @@ def cut_sheet(plan: dict) -> str:
     rows.append("%d cuts, owned total %.2fs, song %.2fs, renderer seconds %.0f"
                 % (len(plan.get("cuts", [])), total, float(plan.get("duration", 0)),
                    sum(float(c.get("duration", 0)) for c in plan.get("cuts", []))))
+    rows.append("clip duration includes %.1fs headroom" % float((plan.get("config") or {}).get("headroom_s", 0.0)))
     return "\n".join(rows)
 
 

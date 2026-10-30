@@ -205,6 +205,8 @@ def stage_analyze(args, work: Path) -> dict:
             alignment = align.transcribe_words(vocal, lyrics or None,
                                                model=args.whisper_model,
                                                device=args.device)
+            if lyrics:
+                alignment["words"] = align.apply_lyrics(alignment.get("words", []), lyrics)
             log("%d words, %d lines%s" % (
                 len(alignment["words"]), len(alignment["lines"]),
                 " aligned to the supplied lyrics" if alignment.get("lyrics_used")
@@ -232,6 +234,7 @@ def stage_plan(args, plan: dict) -> dict:
         snap=args.snap_prefer != "none",
         target_owned_s=args.target, overlap_words=args.overlap_words,
         max_audio_s=args.max_clip, allowed_durations=args.durations,
+        headroom_s=args.headroom,
         snap_tol_s=args.snap_tolerance,
         snap_prefer="beat" if args.snap_prefer == "beat" else "downbeat",
         gap_broll_s=args.broll_gap)
@@ -430,6 +433,8 @@ def build_parser() -> argparse.ArgumentParser:
                             help="renderer limit on the fed audio span (default 12)")
     plan_group.add_argument("--durations", default="5,10,15",
                             help="allowed clip durations (default 5,10,15)")
+    plan_group.add_argument("--headroom", type=float, default=3.0,
+                            help="extra clip seconds after fed audio to avoid freeze (default 3)")
     plan_group.add_argument("--snap-tolerance", type=float, default=0.25)
     plan_group.add_argument("--snap-prefer", default="downbeat",
                             choices=["downbeat", "beat", "none"])

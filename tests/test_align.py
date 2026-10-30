@@ -41,6 +41,13 @@ class Normalise(unittest.TestCase):
 
 
 class BuildAlignment(unittest.TestCase):
+    def test_apply_lyrics_corrects_words_and_fills_unheard_tokens(self):
+        words = raw(["I", "walk", "water"], start=0.0, word_s=0.4, gap_s=0.2)
+        fixed = align.apply_lyrics(words, "I WALK the water!\nAgain.")
+        self.assertEqual([w["word"] for w in fixed], ["I", "WALK", "the", "water!", "Again."])
+        self.assertEqual([w["line_idx"] for w in fixed], [0, 0, 0, 0, 1])
+        self.assertAlmostEqual(fixed[2]["start"], words[1]["end"])
+
     def test_drops_junk_and_keeps_order(self):
         words = raw(["hello", "...", "world"])
         out = align.build_alignment(words)

@@ -44,7 +44,7 @@
         { "name": "cut_sheet", "type": "STRING", "links": null, "slot_index": 1 }
       ],
       "properties": { "Node name for S&R": "SingSyncCutPlan" },
-      "widgets_values": [9, 2, 12, "5,10,15", 0.25, "downbeat", 4]
+      "widgets_values": [9, 2, 12, "5,10,15", 3.0, 0.25, "downbeat", 4]
     },
     {
       "id": 3,

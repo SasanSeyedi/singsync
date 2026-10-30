@@ -56,10 +56,10 @@ class PlanInvariants(unittest.TestCase):
         for cut in plan["cuts"]:
             self.assertIn(cut["duration"], (5.0, 10.0, 15.0))
             self.assertGreaterEqual(cut["duration"] + 1e-6,
-                                    cut["audio_end"] - cut["audio_start"])
+                                    cut["audio_end"] - cut["audio_start"] + 3.0)
         # The bucket must be the *smallest* one that fits.
         for cut in plan["cuts"]:
-            span = cut["audio_end"] - cut["audio_start"]
+            span = cut["audio_end"] - cut["audio_start"] + 3.0
             smaller = [d for d in (5.0, 10.0, 15.0) if d < cut["duration"]]
             for value in smaller:
                 self.assertLess(value + 1e-6, span)
@@ -70,6 +70,10 @@ class PlanInvariants(unittest.TestCase):
         self.assertEqual(cutplan.pick_duration(5.01, "5,10,15"), 10.0)
         self.assertEqual(cutplan.pick_duration(99.0, "5,10,15"), 15.0)
         self.assertEqual(cutplan.parse_durations("4, 8 ,8,12"), (4.0, 8.0, 12.0))
+
+    def test_headroom_selects_larger_allowed_duration(self):
+        self.assertEqual(cutplan.pick_duration(7.2, "5,10,15", headroom_s=3), 15.0)
+        self.assertEqual(cutplan.pick_duration(6.9, "5,10,15", headroom_s=3), 10.0)
 
     def test_overlap_words_come_from_the_neighbours(self):
         plan = self._plan(overlap_words=2)
@@ -184,7 +188,7 @@ class PlanInvariants(unittest.TestCase):
         self.assertIn("idx", sheet)
         self.assertIn("cuts, owned total", sheet)
         self.assertEqual(len(sheet.splitlines()),
-                         len(self._plan()["cuts"]) + 4)
+                         len(self._plan()["cuts"]) + 5)
 
     def test_line_text_uses_lyrics_when_given(self):
         alignment = {

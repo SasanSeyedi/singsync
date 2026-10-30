@@ -46,6 +46,17 @@ def cut_offset(cut: dict, clip_path: str | None = None) -> float:
     return float(cut.get("offset_s", retime.get("offset_s", 0.0)) or 0.0)
 
 
+def slide_short_trim(cut: dict, segment: dict, available_s: float) -> None:
+    """Move a sufficiently long source window earlier to prevent edge freezing."""
+    needed = float(segment["duration_s"])
+    if float(segment["clip_start"]) + needed <= float(available_s) + 1e-6:
+        return
+    if float(available_s) >= needed:
+        earlier = float(segment["clip_start"]) + needed - float(available_s)
+        segment["clip_start"] = max(0.0, float(available_s) - needed)
+        cut["assembly_warning"] = "slid %.2f s earlier to avoid freeze" % earlier
+
+
 def segment_plan(plan: dict, fps: float = 24.0) -> list[dict]:
     """Per-cut trim instructions, in output order.
 
@@ -67,6 +78,26 @@ def segment_plan(plan: dict, fps: float = 24.0) -> list[dict]:
         end = frame_index(cut["owns_end"], fps)
         frames = end - start
         if frames <= 0:
+            continue
+        splice = (cut.get("retime") or {}).get("segments")
+        if splice:
+            owned_lo, owned_hi = float(cut["owns_start"]), float(cut["owns_end"])
+            fed_start = float(cut.get("audio_start", 0.0))
+            bounds = [fed_start + float(s["slice_start"]) for s in splice[1:]]
+            frame_edges = [start, *(frame_index(x, fps) for x in bounds), end]
+            for n, splice_seg in enumerate(splice):
+                a, b = max(start, frame_edges[n]), min(end, frame_edges[n+1])
+                if b <= a:
+                    continue
+                song_a = a / fps
+                song_splice_a = fed_start + float(splice_seg["slice_start"])
+                clip_a = float(splice_seg["clip_start"]) + song_a - song_splice_a
+                part_frames = b-a
+                segments.append({"idx": int(cut.get("idx", 0)), "clip": clip,
+                    "retimed": bool(clip and cut.get("retimed_path") and str(clip)==str(cut["retimed_path"])),
+                    "clip_start": round(max(0.0, clip_a), 6), "pad_start_s": round(max(0.0, -clip_a), 6),
+                    "frames": part_frames, "duration_s": round(part_frames/fps, 6),
+                    "owns_start": max(owned_lo, song_a), "owns_end": min(owned_hi, b/fps), "offset_s": round(offset, 6)})
             continue
         clip_start = clip_time(float(cut["owns_start"]), cut, offset)
         pad_start = max(0.0, -clip_start)
@@ -114,6 +145,13 @@ def assemble(plan: dict, song_path: str | Path, out_path: str | Path, *,
 
     fps = float(fps)
     segments = segment_plan(plan, fps)
+    for seg in segments:
+        if not seg["clip"]:
+            continue
+        available = media_duration(seg["clip"])
+        cut = next((c for c in plan["cuts"] if int(c.get("idx", 0)) == seg["idx"]), None)
+        if cut is not None:
+            slide_short_trim(cut, seg, available)
     missing = [s["idx"] for s in segments if not s["clip"]]
     if missing:
         raise FileNotFoundError(

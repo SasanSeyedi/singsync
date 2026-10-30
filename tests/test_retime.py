@@ -24,6 +24,16 @@ def words_at(tokens, start=0.5, word_s=0.4, gap_s=0.1, shift=0.0):
 
 
 class EstimateOffset(unittest.TestCase):
+    def test_repeated_line_produces_splice_segments(self):
+        slice_words = words_at("one two three four five six".split(), start=0.0, word_s=0.3, gap_s=0.1)
+        clip_words = words_at("one two three".split(), start=0.0, word_s=0.3, gap_s=0.1)
+        clip_words += words_at("one two three".split(), start=3.3, word_s=0.3, gap_s=0.1)
+        clip_words += words_at("four five six".split(), start=6.8, word_s=0.3, gap_s=0.1)
+        result = retime.estimate_offset(clip_words, slice_words)
+        self.assertEqual(result["method"], "splice")
+        self.assertEqual(len(result["segments"]), 2)
+        self.assertLess(result["segments"][0]["slice_end"], result["segments"][1]["clip_start"])
+
     def test_known_positive_shift(self):
         slice_words = words_at(LINE)
         clip_words = words_at(LINE, shift=1.7)

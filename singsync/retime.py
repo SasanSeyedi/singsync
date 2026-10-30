@@ -107,6 +107,42 @@ def estimate_offset(clip_words, slice_words, *,
     if not anchors:
         return result
 
+    anchors = sorted(anchors, key=lambda a: a["slice_t"])
+    clusters = []
+    for anchor in anchors:
+        if not clusters or anchor["delta"] - clusters[-1][-1]["delta"] > 0.5:
+            clusters.append([anchor])
+        else:
+            clusters[-1].append(anchor)
+    # A single bad anchor cannot define a splice; attach it to its nearest
+    # neighbouring cluster and repeat until every retained cluster is stable.
+    while len(clusters) > 1 and any(len(c) < 2 for c in clusters):
+        i = next(i for i, c in enumerate(clusters) if len(c) < 2)
+        target = min((j for j in range(len(clusters)) if j != i),
+                     key=lambda j: abs(statistics.median(a["delta"] for a in clusters[j])
+                                      - statistics.median(a["delta"] for a in clusters[i])))
+        clusters[target].extend(clusters[i])
+        clusters[target].sort(key=lambda a: a["slice_t"])
+        clusters.pop(i)
+        clusters.sort(key=lambda c: c[0]["slice_t"])
+
+    if len(clusters) > 1:
+        centers = [statistics.median(a["delta"] for a in c) for c in clusters]
+        segments = []
+        for i, (cluster, center) in enumerate(zip(clusters, centers)):
+            start = 0.0 if i == 0 else (clusters[i-1][-1]["slice_t"] + cluster[0]["slice_t"]) / 2
+            end = (clusters[i+1][0]["slice_t"] + cluster[-1]["slice_t"]) / 2 if i+1 < len(clusters) else None
+            clip_start = (0.0 + center if i == 0 else
+                          (clusters[i-1][-1]["clip_t"] + cluster[0]["clip_t"]) / 2)
+            segments.append({"slice_start": round(start, 4), "slice_end": round(end, 4) if end is not None else None,
+                             "clip_start": round(clip_start, 4), "offset_s": round(center, 4)})
+        offset = centers[0]
+        result.update({"offset_s": round(offset, 4), "anchors": anchors,
+                       "method": "splice", "n_anchors": len(anchors),
+                       "n_inliers": len(anchors), "spread_s": round(max(a["delta"] for a in anchors)-min(a["delta"] for a in anchors), 4),
+                       "segments": segments})
+        return result
+
     deltas = [a["delta"] for a in anchors]
     median = statistics.median(deltas)
     inliers = [a for a in anchors if abs(a["delta"] - median) <= inlier_s] or anchors
@@ -305,6 +341,13 @@ def retime_plan(plan: dict, *, model: str = "small.en", device: str = "auto",
             cut["offset_s"] = 0.0
             continue
         result.pop("clip_words", None)
+        if result.get("segments"):
+            owned_slice = float(cut.get("owns_start", cut.get("audio_start", 0.0))) - float(cut.get("audio_start", 0.0))
+            owner = next((s for s in result["segments"]
+                          if float(s["slice_start"]) <= owned_slice and
+                          (s["slice_end"] is None or owned_slice < float(s["slice_end"]))),
+                         result["segments"][-1])
+            result["offset_s"] = float(owner["offset_s"])
         cut["retime"] = result
         cut["offset_s"] = float(result.get("offset_s", 0.0))
         measured += 1
