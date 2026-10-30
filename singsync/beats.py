@@ -9,12 +9,15 @@ import sys
 from pathlib import Path
 
 import numpy as np
+from scipy.ndimage import maximum_filter1d
 from scipy.signal import find_peaks, stft
+
+from .ffmpeg_util import ffmpeg_bin
 
 
 def _decode(path: str | Path, sr: int) -> np.ndarray:
-    p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1",
-                        "-ar", str(sr), "-f", "f32le", "-"],
+    p = subprocess.run([ffmpeg_bin(), "-v", "error", "-nostdin", "-i", str(path),
+                        "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
     return np.frombuffer(p.stdout, dtype="<f4").astype(np.float32, copy=False)
 
@@ -65,20 +68,18 @@ def _track_beats(onset: np.ndarray, times: np.ndarray, duration: float):
     # Search a fine tempo grid against a phase-invariant pulse train. A Gaussian
     # tolerance makes timing robust to frame quantization and slightly soft attacks.
     best=(-1., 120., 0.)
+    dt=times[1]-times[0]
+    # Local maximum tolerates attack envelope delay and frame quantization; the
+    # running max is precomputed so the tempo/phase grid stays vectorised.
+    onset_max=maximum_filter1d(np.asarray(onset,dtype=float),size=9,mode='nearest')
     for bpm in np.arange(60., 200.01, .1):
         period=60./bpm
         phases=np.arange(0, min(period, .20), .01)
         for phase in phases:
             ts=np.arange(phase, duration, period)
             if not len(ts): continue
-            dt=times[1]-times[0]
-            idx=np.rint(ts/dt).astype(int)
-            # Local maximum tolerates attack envelope delay and frame quantization.
-            scores=[]
-            for ix in idx:
-                lo=max(0,ix-4); hi=min(len(onset),ix+5)
-                if lo<hi: scores.append(float(np.max(onset[lo:hi])))
-            score=float(np.mean(scores)) if scores else 0.
+            idx=np.clip(np.rint(ts/dt).astype(int),0,len(onset_max)-1)
+            score=float(np.mean(onset_max[idx]))
             # Mild preference against implausibly fast grids explaining every other hit.
             score *= 1.-.0005*(bpm-120.)**2/100.
             if score>best[0]: best=(score,bpm,phase)
@@ -90,13 +91,8 @@ def _track_beats(onset: np.ndarray, times: np.ndarray, duration: float):
         return float(bpm), confidence, beats, beats, 0.
     # Phase is selected by mean onset accent on every fourth beat.
     vals=[]
-    dt=times[1]-times[0]
-    bi=np.clip(np.rint(beats/dt).astype(int),0,len(onset)-1)
-    accents=[]
-    for ix in bi:
-        lo=max(0,ix-4); hi=min(len(onset),ix+5)
-        accents.append(float(np.max(onset[lo:hi])) if lo<hi else 0.)
-    accents=np.asarray(accents)
+    bi=np.clip(np.rint(beats/dt).astype(int),0,len(onset_max)-1)
+    accents=onset_max[bi]
     for q in range(4):
         vals.append(float(np.mean(accents[q::4])) if len(bi[q::4]) else 0.)
     # The tracker phase is anchored at the first pulse; downbeat phase is then
@@ -190,6 +186,19 @@ def analyse(path: str | Path, sr: int = 22050) -> dict:
             'sections':sections,'drops':drops}
 
 
+def _owns(cut: dict):
+    """Owned range of a cut, accepting either `owns` or `owns_start/owns_end`."""
+    if 'owns' in cut: return [float(cut['owns'][0]), float(cut['owns'][1])]
+    return [float(cut['owns_start']), float(cut['owns_end'])]
+
+
+def _set_owns(cut: dict, start: float, end: float):
+    """Write an owned range back in whichever keys the cut carries."""
+    if 'owns' in cut: cut['owns']=[round(start,4), round(end,4)]
+    if 'owns_start' in cut or 'owns' not in cut:
+        cut['owns_start']=round(start,4); cut['owns_end']=round(end,4)
+
+
 def snap_cuts_to_beats(cutplan: dict, analysis: dict, words: list,
                        tol_s: float=.25, prefer: str='downbeat'):
     out=copy.deepcopy(cutplan); log=[]
@@ -198,7 +207,8 @@ def snap_cuts_to_beats(cutplan: dict, analysis: dict, words: list,
     cuts=out.get('cuts',[])
     for i in range(len(cuts)-1):
         left,right=cuts[i],cuts[i+1]
-        old=float(left['owns'][1]); gap_lo=max(float(left['owns'][0]),float(right['owns'][0]))
+        lo_l,hi_l=_owns(left); lo_r,hi_r=_owns(right)
+        old=hi_l; gap_lo=max(lo_l,lo_r)
         if any(float(w['start']) < old < float(w['end']) for w in words):
             continue
         # Adjacent tile boundaries have a point position; actual safe interval is
@@ -206,21 +216,23 @@ def snap_cuts_to_beats(cutplan: dict, analysis: dict, words: list,
         prev_ends=[float(w['end']) for w in words if float(w['end'])<=old+1e-9]
         next_starts=[float(w['start']) for w in words if float(w['start'])>=old-1e-9]
         lo=max(gap_lo,max(prev_ends) if prev_ends else 0.)
-        hi=min(float(right['owns'][1]),min(next_starts) if next_starts else duration)
+        hi=min(hi_r,min(next_starts) if next_starts else duration)
         near=min(candidates,key=lambda t:abs(float(t)-old),default=None)
         if near is None or abs(float(near)-old)>tol_s or float(near)<lo-1e-9 or float(near)>hi+1e-9:
             continue
         new=float(near)
         if abs(new-old)<1e-9: continue
-        left['owns'][1]=new; right['owns'][0]=new
-        log.append({'left_cut':left.get('index',i),'right_cut':right.get('index',i+1),
+        _set_owns(left,lo_l,new); _set_owns(right,new,hi_r)
+        log.append({'left_cut':left.get('idx',left.get('index',i)),
+                    'right_cut':right.get('idx',right.get('index',i+1)),
                     'from':round(old,4),'to':round(new,4),'delta':round(new-old,4)})
     # Owned spans still tile exactly; audio spans remain untouched, preserving shared-word wings.
     return out,log
 
 
 def vibe_brief(analysis: dict, cut: dict) -> str:
-    span=cut.get('owns',[0,0]); mid=(float(span[0])+float(span[1]))/2
+    span=_owns(cut) if ('owns' in cut or 'owns_start' in cut) else [0.,0.]
+    mid=(float(span[0])+float(span[1]))/2
     section=next((s for s in analysis.get('sections',[]) if s['start']<=mid<s['end']),None)
     energy=next((e['energy'] for e in analysis.get('energy_curve',[]) if e['time']>=mid),0.)
     curve=analysis.get('energy_curve',[]); idx=next((i for i,e in enumerate(curve) if e['time']>=mid),0)
