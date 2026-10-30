@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-DIRECTOR_INSTRUCTION = '''Create a music-video plan for about 30 seconds from the two reference images and this idea: {idea!r}. Return ONLY JSON with keys title, style_tags, bpm, character, scene, lyrics, shots. character is one sentence describing image 1 exactly; scene is one sentence describing image 2. lyrics is [verse] with 4 short lines, then [chorus] with 4 short lines, suitable for about 30 seconds. shots has 3-4 objects with lines (exact lyric lines for this shot), action, camera. Camera rules: the camera always stays in FRONT of the character, face and mouth always visible, never behind or orbiting around the back; vary framing: close-up, medium, wide.'''
+DIRECTOR_INSTRUCTION = '''Create a music-video plan for about 30 seconds from the two reference images and this idea: {idea!r}. Return ONLY JSON with keys title, style_tags, bpm, character, scene, lyrics, shots. character is one sentence describing image 1 exactly; scene is one sentence describing image 2. lyrics is an object {{"verse": [4 full lyric lines], "chorus": [4 full lyric lines]}} - each item is one whole sung line (6-9 words), simple and catchy, about 30 seconds in total; never split a line at a comma. shots has 3-4 objects with lines (exact lyric lines for this shot), action, camera. Camera rules: the camera always stays in FRONT of the character, face and mouth always visible, never behind or orbiting around the back; vary framing: close-up, medium, wide.'''
 
 
 def build_director_graph(character_name, scene_name, idea, seed=1):
@@ -18,17 +18,29 @@ def build_director_graph(character_name, scene_name, idea, seed=1):
     }
 
 
-def build_song_graph(tags, lyrics, seconds, seed=1, bpm=120):
-    return {
-        "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"ace_step_1.5_turbo_aio.safetensors"}},
-        "2":{"class_type":"ModelSamplingAuraFlow","inputs":{"model":["1",0],"shift":3}},
-        "3":{"class_type":"TextEncodeAceStepAudio1.5","inputs":{"clip":["1",1],"tags":tags,"lyrics":lyrics,"seed":int(seed),"bpm":int(bpm),"duration":float(seconds),"timesignature":"4","language":"en","keyscale":"C major","generate_audio_codes":True,"cfg_scale":2.0,"temperature":0.85,"top_p":0.9,"top_k":0,"min_p":0.0}},
+def build_song_graph(tags, lyrics, seconds, seed=1, bpm=120, model="xl"):
+    """ACE-Step 1.5 song graph. model="xl" (default; XL turbo, measured 41/44 lyric words recognised on a test song)
+    or "turbo" (small all-in-one checkpoint, faster, 38/44)."""
+    enc = {"tags":tags,"lyrics":lyrics,"seed":int(seed),"bpm":int(bpm),"duration":float(seconds),"timesignature":"4","language":"en","keyscale":"C major","generate_audio_codes":True,"cfg_scale":2.0,"temperature":0.85,"top_p":0.9,"top_k":0,"min_p":0.0}
+    if model == "turbo":
+        loaders = {"1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"ace_step_1.5_turbo_aio.safetensors"}}}
+        unet, clip, vae = ["1",0], ["1",1], ["1",2]
+    else:
+        loaders = {"1":{"class_type":"UNETLoader","inputs":{"unet_name":"acestep_v1.5_xl_turbo_bf16.safetensors","weight_dtype":"default"}},
+                   "9":{"class_type":"DualCLIPLoader","inputs":{"clip_name1":"qwen_0.6b_ace15.safetensors","clip_name2":"qwen_4b_ace15.safetensors","type":"ace","device":"default"}},
+                   "10":{"class_type":"VAELoader","inputs":{"vae_name":"ace_1.5_vae.safetensors"}}}
+        unet, clip, vae = ["1",0], ["9",0], ["10",0]
+    g = dict(loaders)
+    g.update({
+        "2":{"class_type":"ModelSamplingAuraFlow","inputs":{"model":unet,"shift":3}},
+        "3":{"class_type":"TextEncodeAceStepAudio1.5","inputs":dict(enc, clip=clip)},
         "4":{"class_type":"ConditioningZeroOut","inputs":{"conditioning":["3",0]}},
         "5":{"class_type":"EmptyAceStep1.5LatentAudio","inputs":{"seconds":float(seconds),"batch_size":1}},
         "6":{"class_type":"KSampler","inputs":{"model":["2",0],"seed":int(seed),"steps":8,"cfg":1.0,"sampler_name":"euler","scheduler":"simple","positive":["3",0],"negative":["4",0],"latent_image":["5",0],"denoise":1.0}},
-        "7":{"class_type":"VAEDecodeAudio","inputs":{"samples":["6",0],"vae":["1",2]}},
+        "7":{"class_type":"VAEDecodeAudio","inputs":{"samples":["6",0],"vae":vae}},
         "8":{"class_type":"SaveAudioMP3","inputs":{"audio":["7",0],"filename_prefix":"singsync/song","quality":"V0"}},
-    }
+    })
+    return g
 
 
 def parse_director_json(value):
@@ -53,11 +65,31 @@ def parse_director_json(value):
     return result
 
 
+VOCAL_TAGS = "clear lead vocal, english lyrics, sung clearly, simple melody, vocals loud in the mix"
+
+
+def song_tags(style_tags):
+    """ACE-Step mumbles unless the tags ask for a clear vocal (measured: 31/44 vs 38/44 lyric words recognised)."""
+    tags = str(style_tags or "upbeat pop, catchy").strip().rstrip(",")
+    return tags if "sung clearly" in tags else f"{tags}, {VOCAL_TAGS}"
+
+
 def format_lyrics(value):
+    """Whole lines under [Verse 1] / [Chorus] section tags - ACE-Step sings full lines far more clearly than fragments."""
+    if isinstance(value, dict):
+        parts = []
+        for key, label in (("verse", "[Verse 1]"), ("pre_chorus", "[Pre-Chorus]"), ("chorus", "[Chorus]"), ("bridge", "[Bridge]")):
+            lines = value.get(key) or []
+            if isinstance(lines, str): lines = [lines]
+            lines = [str(x).strip() for x in lines if str(x).strip()]
+            if lines: parts.append(label + "\n" + "\n".join(lines))
+        return "\n\n".join(parts)
     if isinstance(value, list):
-        lines = [str(x).strip() for x in value if str(x).strip()]
-        return "\n".join(lines)
-    return str(value).strip()
+        return "\n".join(str(x).strip() for x in value if str(x).strip())
+    text = str(value).strip()
+    import re as _re
+    text = _re.sub(r"\s*\[(verse[^\]]*|chorus|pre-chorus|bridge)\]\s*", lambda m: "\n\n[" + m.group(1).title() + "]\n", text, flags=_re.I).strip()
+    return text
 
 
 def shot_prompt(shot, lyrics):

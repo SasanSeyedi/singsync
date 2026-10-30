@@ -58,7 +58,7 @@ def main(argv=None):
 
     song_path = work / "song.mp3"
     if not song_path.exists():
-        outputs = client.run(idea.build_song_graph(plan.get("style_tags", ""), plan["lyrics_text"], a.seconds, a.seed, plan.get("bpm", 120)))
+        outputs = client.run(idea.build_song_graph(idea.song_tags(plan.get("style_tags", "")), plan["lyrics_text"], a.seconds, a.seed, plan.get("bpm", 120)))
         client.download(_output_item(outputs, "audio"), song_path)
 
     cuts_path = work / "cuts.json"

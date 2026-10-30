@@ -200,9 +200,7 @@ def assemble(plan: dict, song_path: str | Path, out_path: str | Path, *,
     graph_path = work / ("%s.filtergraph.txt" % out_path.stem)
     graph_path.write_text(";\n".join(chains), encoding="utf-8")
 
-    ffmpeg([
-        *inputs,
-        "-filter_complex_script", str(graph_path),
+    tail_args = [
         "-map", "[vout]", "-map", "%d:a" % audio_input,
         "-c:v", "libx264", "-preset", preset, "-crf", str(int(crf)),
         "-pix_fmt", "yuv420p", "-r", "%.6f" % fps,
@@ -210,7 +208,13 @@ def assemble(plan: dict, song_path: str | Path, out_path: str | Path, *,
         "-t", "%.6f" % total_s,
         "-movflags", "+faststart",
         str(out_path),
-    ])
+    ]
+    # ffmpeg >= 7 reads option values from files with "-/option file"; ffmpeg 9 removed
+    # -filter_complex_script entirely. Try the modern form first, fall back for ffmpeg < 7.
+    try:
+        ffmpeg([*inputs, "-/filter_complex", str(graph_path), *tail_args])
+    except RuntimeError:
+        ffmpeg([*inputs, "-filter_complex_script", str(graph_path), *tail_args])
     if not keep_graph:
         graph_path.unlink(missing_ok=True)
 
