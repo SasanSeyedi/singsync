@@ -189,6 +189,14 @@ saved plan with `python scripts/cloud_render_cut.py plan.json 0 --image face.png
 --image outfit.png --turbo`. The node observes `SINGSYNC_MAX_CLIPS` (default 6)
 and records submitted jobs in `singsync_spend.jsonl` under the plan work folder.
 
+## One sentence to music video
+
+```bash
+py -3.14 scripts/idea_to_video.py --character face.png --scene location.png --idea "A lonely astronaut dances beneath a neon moon" --seconds 30 --work out/moon-dance
+```
+
+The director, song and video models all use open weights: Qwen3-VL 8B, ACE-Step 1.5, MiniMax H3 and faster-whisper. The first three run on Comfy Cloud through ComfyUI native nodes; there are no partner nodes. faster-whisper runs locally on CPU. The workflow creates the song, aligns its generated lyrics, renders H3 cuts in parallel, retimes them and assembles captioned video. Install `faster-whisper` and make sure `ffmpeg`/`ffprobe` are available. Runs resume from files already present under `--work`.
+
 ## Licence
 
 MIT. All code in this repository was written for it.

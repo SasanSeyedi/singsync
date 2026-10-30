@@ -19,7 +19,7 @@ def frame_length(seconds: float) -> int:
 
 def build_h3_r2v_prompt(prompt: str, image_names: list[str], audio_name: str,
                         seconds: float, width: int = 1344, height: int = 768,
-                        turbo: bool = True, seed: int = 1) -> dict:
+                        turbo: bool = True, seed: int = 1, ref_image_size: str = "match") -> dict:
     if not image_names or len(image_names) > 9:
         raise ValueError("image_names must contain 1 to 9 references")
     nodes: dict[str, dict] = {}
@@ -38,7 +38,7 @@ def build_h3_r2v_prompt(prompt: str, image_names: list[str], audio_name: str,
     node(30, "LoadAudio", {"audio":audio_name})
     ref_images = {f"ref_image_{i}":[str(10+i),0] for i in range(len(image_names))}
     rinputs = {"clip":["3",0], "vae":["4",0], "audio_vae":["5",0], "prompt":prompt,
-       "width":int(width), "height":int(height), "length":frame_length(seconds), "ref_image_size":"match",
+       "width":int(width), "height":int(height), "length":frame_length(seconds), "ref_image_size":ref_image_size,
        "ref_images":ref_images, "ref_audios":{"ref_audio_0":["30",0]}}
     node(40,"MiniMaxH3ReferenceToVideo",rinputs)
     steps = 4 if turbo else 20
@@ -117,6 +117,39 @@ class ComfyCloud:
         pid=result.get("prompt_id") or result.get("promptId")
         if not pid: raise RuntimeError("Comfy Cloud submit response missing prompt_id")
         return str(pid)
+
+    def run(self, graph, timeout_s=2400, poll_s=10):
+        """Submit any native Comfy graph and return its output dictionary."""
+        pid = self.submit(graph)
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                status = json.loads(self._call("/api/job/" + urllib.parse.quote(pid) + "/status").decode())
+            except RuntimeError:
+                status = json.loads(self._call("/api/v1/jobs/" + urllib.parse.quote(pid) + "/status").decode())
+            state = str(status.get("status", status.get("state", ""))).lower()
+            if state in ("completed", "success"):
+                history = None
+                for endpoint in (f"/api/history_v2/{urllib.parse.quote(pid)}", f"/api/history/{urllib.parse.quote(pid)}"):
+                    try:
+                        history = json.loads(self._call(endpoint).decode()); break
+                    except RuntimeError: continue
+                h = history.get(pid, history) if isinstance(history, dict) else {}
+                if isinstance(h, list): h = h[0] if h else {}
+                return h.get("outputs", {}) if isinstance(h, dict) else {}
+            if state in ("failed", "error", "cancelled"):
+                return self._raise_redacted(f"Comfy Cloud job {state}: {status.get('message') or status.get('error') or state}")
+            time.sleep(min(poll_s, max(0, deadline-time.monotonic())))
+        raise TimeoutError("Comfy Cloud job timed out")
+
+    def download(self, item, destination=None):
+        """Download a Comfy output item (or return bytes when destination is omitted)."""
+        query = urllib.parse.urlencode({k:item[k] for k in ("filename", "subfolder", "type") if k in item})
+        content = self._call("/api/view?" + query)
+        if destination is None:
+            return content
+        path = Path(destination); path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(content)
+        return path
 
     def wait(self, prompt_id, timeout_s=2400, poll_s=10):
         deadline=time.monotonic()+timeout_s
