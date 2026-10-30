@@ -1,0 +1,160 @@
+{
+  "last_node_id": 6,
+  "last_link_id": 5,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "SingSyncSongAnalyze",
+      "pos": [40, 180],
+      "size": [400, 240],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        { "name": "song", "type": "AUDIO", "link": null, "shape": 7 },
+        { "name": "vocals", "type": "AUDIO", "link": null, "shape": 7 }
+      ],
+      "outputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "links": [1], "slot_index": 0 },
+        { "name": "summary", "type": "STRING", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncSongAnalyze" },
+      "widgets_values": [
+        "",
+        "I walk the wire over bright water\ncounting every light below me",
+        "small.en",
+        "auto",
+        true,
+        ""
+      ]
+    },
+    {
+      "id": 2,
+      "type": "SingSyncCutPlan",
+      "pos": [480, 180],
+      "size": [360, 230],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "link": 1 }
+      ],
+      "outputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "links": [2], "slot_index": 0 },
+        { "name": "cut_sheet", "type": "STRING", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncCutPlan" },
+      "widgets_values": [9, 2, 12, "5,10,15", 0.25, "downbeat", 4]
+    },
+    {
+      "id": 3,
+      "type": "SingSyncCutSlicer",
+      "pos": [880, 180],
+      "size": [380, 300],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "link": 2 }
+      ],
+      "outputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "links": [3], "slot_index": 0 },
+        { "name": "prompt_sheet", "type": "STRING", "links": null, "slot_index": 1 },
+        { "name": "slice_paths", "type": "STRING", "links": null, "slot_index": 2 },
+        { "name": "prompts", "type": "STRING", "links": null, "slot_index": 3 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncCutSlicer" },
+      "widgets_values": [
+        "a tall singer in a red coat, short dark hair",
+        "an empty multi-storey car park at dusk",
+        "35mm, handheld, low sun, cool grade",
+        "",
+        "wav",
+        true
+      ]
+    },
+    {
+      "id": 4,
+      "type": "SingSyncSeedanceKie",
+      "pos": [1300, 180],
+      "size": [340, 170],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "link": 3 },
+        { "name": "character_image", "type": "IMAGE", "link": null, "shape": 7 }
+      ],
+      "outputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "links": [4], "slot_index": 0 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncSeedanceKie" },
+      "widgets_values": ["480p", "all", false, ""]
+    },
+    {
+      "id": 5,
+      "type": "SingSyncRetime",
+      "pos": [1680, 180],
+      "size": [320, 130],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "link": 4 }
+      ],
+      "outputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "links": [5], "slot_index": 0 },
+        { "name": "offsets", "type": "STRING", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncRetime" },
+      "widgets_values": ["small.en", "auto", false]
+    },
+    {
+      "id": 6,
+      "type": "SingSyncAssemble",
+      "pos": [2040, 180],
+      "size": [340, 230],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        { "name": "plan", "type": "SINGSYNC_PLAN", "link": 5 }
+      ],
+      "outputs": [
+        { "name": "video_path", "type": "STRING", "links": null, "slot_index": 0 },
+        { "name": "report", "type": "STRING", "links": null, "slot_index": 1 }
+      ],
+      "properties": { "Node name for S&R": "SingSyncAssemble" },
+      "widgets_values": [24, false, "bold_bottom", "singsync.mp4", 18, "medium", false]
+    }
+  ],
+  "links": [
+    [1, 1, 0, 2, 0, "SINGSYNC_PLAN"],
+    [2, 2, 0, 3, 0, "SINGSYNC_PLAN"],
+    [3, 3, 0, 4, 0, "SINGSYNC_PLAN"],
+    [4, 4, 0, 5, 0, "SINGSYNC_PLAN"],
+    [5, 5, 0, 6, 0, "SINGSYNC_PLAN"]
+  ],
+  "groups": [
+    {
+      "title": "SingSync: song in, singing music video out",
+      "bounding": [20, 100, 2380, 400],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "singsync": {
+      "notes": [
+        "Set song_path on SingSync Song Analyze (or connect an AUDIO input) and paste the lyrics.",
+        "A vocal stem in vocal_path transcribes better and makes the character sing rather than mouth along.",
+        "SingSync Seedance (kie.ai) needs KIE_API_KEY in the environment and a character reference image.",
+        "Swap that node for any renderer: read slice_paths/prompts from Cut Slicer and write each clip back as the cut's clip_path.",
+        "SingSync Retime needs faster-whisper; without it the offsets stay at zero."
+      ]
+    }
+  },
+  "version": 0.4
+}

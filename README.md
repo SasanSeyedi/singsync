@@ -1,3 +1,160 @@
 # SingSync
 
-Work in progress for the #OpenSourceHiggsfield challenge. See BUILD_SPEC.md.
+A ComfyUI custom-node pack that turns a song into a music video in which the
+character actually sings it: beat-aware cuts, one vocal slice fed to each cut,
+and a measured per-clip lip-sync correction before the timeline is assembled.
+
+Song (+ optional vocal stem and lyrics) in, one video out, the same length as
+the song, with the master audio on it.
+
+## What it does differently
+
+**Each cut is fed its own vocal slice.** Audio-driven video models sing what you
+give them. SingSync cuts the vocal into per-shot slices and hands each shot the
+seconds it needs, so the character sings its own line rather than mouthing along
+to a whole track.
+
+**It measures the lip-sync error per clip and corrects it.** A model asked to
+sing from 0.0s does not always start at 0.0s; one clip lands a third of a second
+early, the next a second late, and no single global nudge fixes both. SingSync
+transcribes the rendered clip, matches its words against the slice it was fed,
+and reads the offset straight off the matched pairs:
+
+    offset = median(clip_t - slice_t)
+
+That offset is applied when the clip is trimmed, so nothing is re-encoded to fix
+it. If the error drifts inside one clip, the anchors become a piecewise-linear
+map instead of one constant shift.
+
+**Cuts land on lyric lines and then on beats.** Words are grouped to a target
+length, preferring a break at the end of a lyric line; the resulting boundary is
+then snapped to the nearest downbeat, but only when the move stays inside a gap
+between words, so a snap can never cut a syllable in half.
+
+**Overlap words make the joins sample-accurate.** Every cut *owns* a contiguous
+range of the song, and the owned ranges tile `[0, duration]` exactly: no gaps, no
+overlaps. The audio a cut is *fed* is wider than that — it reaches two or three
+words into each neighbour. Both sides of a join therefore contain the same words,
+so the trim happens on material both clips have, and the model has context for
+the phrase it is starting and the one it is finishing. Segment lengths are
+counted in whole frames off one shared grid, so the finished video matches the
+song length to under a frame no matter how many cuts there are.
+
+## Install
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/SasanSeyedi/singsync
+pip install faster-whisper     # optional: needed for transcription and retime
+```
+
+`numpy` and `scipy` are already in ComfyUI. `ffmpeg` and `ffprobe` must be on
+`PATH`, or point `SINGSYNC_FFMPEG` / `SINGSYNC_FFPROBE` at them. The core
+(`singsync/`) imports no torch and no ComfyUI, so it runs and tests on its own.
+Python 3.10–3.13.
+
+## Nodes
+
+All under the category **SingSync**. They pass a `SINGSYNC_PLAN`: a plain
+JSON-serialisable dict plus files under `<ComfyUI output>/singsync/<run_id>/`.
+
+| Node | Does |
+| --- | --- |
+| **SingSync Song Analyze** | Tempo, beats, downbeats, energy and sections; transcribes the vocal with faster-whisper and aligns it to your lyrics. |
+| **SingSync Cut Plan** | Groups words into cuts, assigns owned ranges, shared overlap words, duration buckets; outputs the plan and a cut sheet. |
+| **SingSync Cut Slicer** | Writes each cut's vocal slice and its render prompt; also outputs lists of slice paths and prompts for a loop. |
+| **SingSync Seedance (kie.ai)** | Renders the cuts through kie.ai Seedance. Registered through a guarded import — a provider problem cannot stop the pack loading. |
+| **SingSync Retime** | Measures the lip-sync offset of every rendered clip, optionally bakes it in; outputs an offsets table. |
+| **SingSync Assemble** | Trims each clip to the range it owns, concatenates at constant fps, muxes the master song, optional burnt-in karaoke captions. |
+
+Nothing heavy is imported and no work is done at import time, so a missing
+optional dependency surfaces on the node that needs it rather than at start-up.
+
+A minimal workflow chaining them is in
+[`workflows/singsync_music_video.json`](workflows/singsync_music_video.json).
+
+## Run it without ComfyUI
+
+```bash
+# No inputs at all: generates a song, fakes the renders, runs the whole chain.
+python scripts/run_pipeline.py --demo --work-dir /tmp/singsync-demo
+
+# A real song, renders faked:
+python scripts/run_pipeline.py \
+    --song song.mp3 --vocals vocals.wav --lyrics lyrics.txt \
+    --character "a tall singer in a red coat" --scene "an empty car park at dusk" \
+    --style "35mm, handheld, low sun" \
+    --dry-run --captions --work-dir out/
+```
+
+`--dry-run` replaces every render with an lavfi slate that carries that cut's own
+vocal slice, delayed by a known offset. Retime then has a real file to measure,
+and the run prints what it injected next to what it measured:
+
+```
+idx  injected  measured  error
+  0    -0.423    -0.432  -0.009
+  1    -0.838    -0.822  +0.016
+  3    -1.026    -1.038  -0.012
+  4    +0.086    +0.070  -0.016
+mean |error| 0.013s, worst 0.016s over 4 cuts
+```
+
+Runs are resumable (`--plan out/plan.json --stages assemble`) and can be run one
+stage at a time. `--help` lists the planner and prompt options.
+
+## Providers
+
+**kie.ai Seedance** (`singsync/providers/kie.py`). The key is read from the
+`KIE_API_KEY` environment variable and never written to the plan, the logs or
+the work directory. Seedance 2 through kie accepts clip durations of 5, 10 or 15
+seconds; SingSync defaults to a 12-second cap on the fed audio and picks the
+smallest bucket that covers each span. Seedance 2.5 takes 4–30 seconds — pass
+`--max-clip 30 --durations 4,...,30` (or set the two widgets) to use it.
+
+**ComfyUI's own Seedance 2.5 reference-to-video node** also takes audio clips.
+To use it instead, drop it in where the Seedance node sits: read
+`slice_path`/`prompt`/`duration` from Cut Slicer's list outputs and write the
+rendered file back as the cut's `clip_path`. Nothing else in the chain cares
+where the clip came from.
+
+## Limits
+
+- **No source separation.** Bring your own vocal stem (Demucs, UVR, a stem
+  export). Without one, the full mix is transcribed and fed, which transcribes
+  less accurately and gives the renderer a backing track to lip-sync to.
+- **Retime needs faster-whisper.** Without it, offsets stay at zero and the cuts
+  are joined on their planned times. The dry run says so and simulates the clip
+  transcripts instead, which exercises the estimator but not whisper.
+- **Downbeat detection is weak** and is treated that way: it only ever nudges a
+  boundary that is already inside a word gap, within a 0.25s tolerance.
+  `downbeat_confidence` is reported; do not build on it.
+- **Discrete clip buckets cost renderer seconds.** A 10.2s audio span becomes a
+  15s clip. Narrowing the target (`--target 8 --max-clip 10 --durations 5,10`)
+  trades shot length for render budget.
+- **Piecewise retiming is only applied when clips are baked** (`--bake-retime`
+  / the *write_retimed_clips* widget). Otherwise the constant median offset is
+  used, which is what a per-clip error usually is.
+- **Character consistency** is whatever the reference image and the repeated
+  prompt text give you. SingSync keeps the character and scene text identical
+  across cuts; it does nothing else to hold a face steady.
+- **Upscaling and interpolation** are left to ComfyUI's own nodes, downstream of
+  Assemble.
+- **What has been verified here:** the planner, retime estimator, caption text
+  and assembly length invariant are covered by tests, and the whole chain has
+  been run end to end with faked renders. No clip in this repository was
+  rendered by a real Seedance call, so the measured offsets above are from the
+  dry run, not from the model.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+135 tests, stdlib `unittest` only. Tests that need ffmpeg skip themselves when
+it is absent; nothing needs ComfyUI, torch, a GPU or a network.
+
+## Licence
+
+MIT. All code in this repository was written for it.

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "singsync"
+version = "0.1.0"
+description = "ComfyUI nodes that cut a song into beat-aware shots, feed each shot its own vocal slice, and correct every clip's lip-sync offset before assembly."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "SingSync contributors" }]
+keywords = ["comfyui", "music-video", "lip-sync", "beat-tracking", "seedance"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+[project.optional-dependencies]
+# Word timestamps for alignment and for measuring each clip's lip-sync offset.
+transcribe = ["faster-whisper>=1.0"]
+
+[project.urls]
+Repository = "https://github.com/SasanSeyedi/singsync"
+Issues = "https://github.com/SasanSeyedi/singsync/issues"
+
+[tool.comfy]
+DisplayName = "SingSync"
+# Set PublisherId to your registry publisher before `comfy node publish`.
+PublisherId = ""
+Icon = ""
+
+[tool.setuptools]
+packages = ["singsync", "singsync.providers"]
