@@ -73,6 +73,17 @@ optional dependency surfaces on the node that needs it rather than at start-up.
 A minimal workflow chaining them is in
 [`workflows/singsync_music_video.json`](workflows/singsync_music_video.json).
 
+## Make the song too (ACE-Step 1.5, open weights)
+
+ACE-Step 1.5 is ComfyUI-native and open weights: create the song in the workflow without an MP3 or a closed music service. The lyrics you write drive the music, captions and alignment, so Whisper mainly times known words instead of guessing them.
+
+Open [`workflows/ace_step_to_singsync.json`](workflows/ace_step_to_singsync.json), then use ComfyUI Template Browser to load the official ACE-Step 1.5 template into its marked placeholder group. Connect generated AUDIO to SingSync Song Analyze → song, and use the same lyrics in ACE-Step and SingSync Song Analyze → lyrics. Set style tags in ACE-Step, then run the remaining SingSync chain.
+
+ACE-Step outputs a full mix; SingSync aligns the known lyrics against it. For best lip-sync, add a vocal-separation node and connect its vocal stem to Song Analyze → vocals. The video model is the only partner/closed component: use the included kie.ai Seedance node or ComfyUI’s official Seedance 2.5 reference-to-video node, which accepts audio clips.
+
+## Results from the demo
+
+In an observed 30 s run, four cuts were used (clips of 15/10/10/5 s; cut 0 was re-rendered at 15 s after the first take came out loose). Measured lip-sync offsets were +0.64 s, +3.28 s and +1.68 s per vocal cut; Seedance sang late, and a repeated line in one clip was handled by repeat-aware retime. The final video was 30.000 s (720 frames at 24 fps), with captions generated from the lyrics.
 ## Run it without ComfyUI
 
 ```bash
@@ -153,7 +164,7 @@ where the clip came from.
 python -m unittest discover -s tests -t .
 ```
 
-144 tests, stdlib `unittest` only. Tests that need ffmpeg skip themselves when
+stdlib `unittest` only. Tests that need ffmpeg skip themselves when
 it is absent; nothing needs ComfyUI, torch, a GPU or a network.
 
 ## Licence

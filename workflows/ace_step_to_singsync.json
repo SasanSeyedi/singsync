@@ -1,0 +1,442 @@
+{
+    "last_node_id":  7,
+    "last_link_id":  5,
+    "nodes":  [
+                  {
+                      "id":  7,
+                      "type":  "Note",
+                      "pos":  [
+                                  40,
+                                  -260
+                              ],
+                      "size":  [
+                                   620,
+                                   230
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  0,
+                      "mode":  0,
+                      "inputs":  [
+
+                                 ],
+                      "outputs":  [
+
+                                  ],
+                      "title":  "ACE-Step 1.5 — native template placeholder",
+                      "properties":  {
+
+                                     },
+                      "widgets_values":  [
+                                             "ACE-Step 1.5 native ComfyUI nodes`n`nOpen ComfyUI Template Browser and load the official ACE-Step 1.5 template. Replace this note with its native generation nodes. Feed them the same lyrics shown in SingSync Song Analyze and your style tags; connect generated AUDIO to Song Analyze → song. Keep Song Analyze → lyrics identical to the generation lyrics. Native node names and sockets vary by ComfyUI version, so this workflow deliberately uses no guessed ACE-Step node classes."
+                                         ],
+                      "color":  "#334",
+                      "bgcolor":  "#556"
+                  },
+                  {
+                      "id":  1,
+                      "type":  "SingSyncSongAnalyze",
+                      "pos":  [
+                                  40,
+                                  180
+                              ],
+                      "size":  [
+                                   400,
+                                   240
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  0,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "song",
+                                         "type":  "AUDIO",
+                                         "link":  null,
+                                         "shape":  7
+                                     },
+                                     {
+                                         "name":  "vocals",
+                                         "type":  "AUDIO",
+                                         "link":  null,
+                                         "shape":  7
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "plan",
+                                          "type":  "SINGSYNC_PLAN",
+                                          "links":  [
+                                                        1
+                                                    ],
+                                          "slot_index":  0
+                                      },
+                                      {
+                                          "name":  "summary",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  1
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncSongAnalyze"
+                                     },
+                      "widgets_values":  [
+                                             "",
+                                             "I walk the wire over bright water\ncounting every light below me",
+                                             "small.en",
+                                             "auto",
+                                             true,
+                                             ""
+                                         ]
+                  },
+                  {
+                      "id":  2,
+                      "type":  "SingSyncCutPlan",
+                      "pos":  [
+                                  480,
+                                  180
+                              ],
+                      "size":  [
+                                   360,
+                                   230
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  1,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "plan",
+                                         "type":  "SINGSYNC_PLAN",
+                                         "link":  1
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "plan",
+                                          "type":  "SINGSYNC_PLAN",
+                                          "links":  [
+                                                        2
+                                                    ],
+                                          "slot_index":  0
+                                      },
+                                      {
+                                          "name":  "cut_sheet",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  1
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncCutPlan"
+                                     },
+                      "widgets_values":  [
+                                             9,
+                                             2,
+                                             12,
+                                             "5,10,15",
+                                             3.0,
+                                             0.25,
+                                             "downbeat",
+                                             4
+                                         ]
+                  },
+                  {
+                      "id":  3,
+                      "type":  "SingSyncCutSlicer",
+                      "pos":  [
+                                  880,
+                                  180
+                              ],
+                      "size":  [
+                                   380,
+                                   300
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  2,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "plan",
+                                         "type":  "SINGSYNC_PLAN",
+                                         "link":  2
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "plan",
+                                          "type":  "SINGSYNC_PLAN",
+                                          "links":  [
+                                                        3
+                                                    ],
+                                          "slot_index":  0
+                                      },
+                                      {
+                                          "name":  "prompt_sheet",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  1
+                                      },
+                                      {
+                                          "name":  "slice_paths",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  2
+                                      },
+                                      {
+                                          "name":  "prompts",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  3
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncCutSlicer"
+                                     },
+                      "widgets_values":  [
+                                             "a tall singer in a red coat, short dark hair",
+                                             "an empty multi-storey car park at dusk",
+                                             "35mm, handheld, low sun, cool grade",
+                                             "",
+                                             "wav",
+                                             true
+                                         ]
+                  },
+                  {
+                      "id":  4,
+                      "type":  "SingSyncSeedanceKie",
+                      "pos":  [
+                                  1300,
+                                  180
+                              ],
+                      "size":  [
+                                   340,
+                                   170
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  3,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "plan",
+                                         "type":  "SINGSYNC_PLAN",
+                                         "link":  3
+                                     },
+                                     {
+                                         "name":  "character_image",
+                                         "type":  "IMAGE",
+                                         "link":  null,
+                                         "shape":  7
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "plan",
+                                          "type":  "SINGSYNC_PLAN",
+                                          "links":  [
+                                                        4
+                                                    ],
+                                          "slot_index":  0
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncSeedanceKie"
+                                     },
+                      "widgets_values":  [
+                                             "480p",
+                                             "all",
+                                             false,
+                                             ""
+                                         ]
+                  },
+                  {
+                      "id":  5,
+                      "type":  "SingSyncRetime",
+                      "pos":  [
+                                  1680,
+                                  180
+                              ],
+                      "size":  [
+                                   320,
+                                   130
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  4,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "plan",
+                                         "type":  "SINGSYNC_PLAN",
+                                         "link":  4
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "plan",
+                                          "type":  "SINGSYNC_PLAN",
+                                          "links":  [
+                                                        5
+                                                    ],
+                                          "slot_index":  0
+                                      },
+                                      {
+                                          "name":  "offsets",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  1
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncRetime"
+                                     },
+                      "widgets_values":  [
+                                             "small.en",
+                                             "auto",
+                                             false
+                                         ]
+                  },
+                  {
+                      "id":  6,
+                      "type":  "SingSyncAssemble",
+                      "pos":  [
+                                  2040,
+                                  180
+                              ],
+                      "size":  [
+                                   340,
+                                   230
+                               ],
+                      "flags":  {
+
+                                },
+                      "order":  5,
+                      "mode":  0,
+                      "inputs":  [
+                                     {
+                                         "name":  "plan",
+                                         "type":  "SINGSYNC_PLAN",
+                                         "link":  5
+                                     }
+                                 ],
+                      "outputs":  [
+                                      {
+                                          "name":  "video_path",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  0
+                                      },
+                                      {
+                                          "name":  "report",
+                                          "type":  "STRING",
+                                          "links":  null,
+                                          "slot_index":  1
+                                      }
+                                  ],
+                      "properties":  {
+                                         "Node name for S\u0026R":  "SingSyncAssemble"
+                                     },
+                      "widgets_values":  [
+                                             24,
+                                             false,
+                                             "bold_bottom",
+                                             "singsync.mp4",
+                                             18,
+                                             "medium",
+                                             false
+                                         ]
+                  }
+              ],
+    "links":  [
+                  [
+                      1,
+                      1,
+                      0,
+                      2,
+                      0,
+                      "SINGSYNC_PLAN"
+                  ],
+                  [
+                      2,
+                      2,
+                      0,
+                      3,
+                      0,
+                      "SINGSYNC_PLAN"
+                  ],
+                  [
+                      3,
+                      3,
+                      0,
+                      4,
+                      0,
+                      "SINGSYNC_PLAN"
+                  ],
+                  [
+                      4,
+                      4,
+                      0,
+                      5,
+                      0,
+                      "SINGSYNC_PLAN"
+                  ],
+                  [
+                      5,
+                      5,
+                      0,
+                      6,
+                      0,
+                      "SINGSYNC_PLAN"
+                  ]
+              ],
+    "groups":  [
+                   {
+                       "title":  "ACE-Step 1.5 — make the song too",
+                       "bounding":  [
+                                        20,
+                                        -290,
+                                        660,
+                                        280
+                                    ],
+                       "color":  "#8a5a2b",
+                       "font_size":  24,
+                       "flags":  {
+
+                                 }
+                   },
+                   {
+                       "title":  "SingSync: song in, singing music video out",
+                       "bounding":  [
+                                        20,
+                                        100,
+                                        2380,
+                                        400
+                                    ],
+                       "color":  "#3f789e",
+                       "font_size":  24,
+                       "flags":  {
+
+                                 }
+                   }
+               ],
+    "config":  {
+
+               },
+    "extra":  {
+                  "singsync":  {
+                                   "notes":  [
+                                                 "Load the official ACE-Step 1.5 template from ComfyUI Template Browser and place its nodes in the marked group. Connect generated AUDIO to Song Analyze → song. Use identical lyrics for ACE-Step and Song Analyze → lyrics, and pass style tags to ACE-Step."
+                                             ]
+                               }
+              },
+    "version":  0.4
+}
