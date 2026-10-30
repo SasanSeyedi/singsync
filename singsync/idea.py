@@ -43,6 +43,14 @@ def build_song_graph(tags, lyrics, seconds, seed=1, bpm=120, model="xl"):
     return g
 
 
+def build_stem_graph(audio_name, model_name="htdemucs_ft"):
+    """Demucs vocal stem on Comfy Cloud (AudioStemSeparate, open weights). H3 lip-syncs far better to a clean
+    vocal than to the full mix (measured offsets ~0.02 s vs 1.3-2.1 s in our runs)."""
+    return {"1":{"class_type":"LoadAudio","inputs":{"audio":audio_name}},
+            "2":{"class_type":"AudioStemSeparate","inputs":{"audio":["1",0],"model_name":model_name}},
+            "3":{"class_type":"SaveAudio","inputs":{"audio":["2",0],"filename_prefix":"singsync/vocals"}}}
+
+
 def parse_director_json(value):
     """Accept model text or output records; tolerate fences and surrounding prose."""
     if isinstance(value, dict):
@@ -112,14 +120,17 @@ def format_lyrics(value):
     return text
 
 
-def shot_prompt(shot, lyrics, character="", visual=""):
+def shot_prompt(shot, lyrics, character="", visual="", scene="", look=""):
     lines = shot.get("lines", [])
     if isinstance(lines, str): lines = [lines]
     exact = "\n".join(str(x) for x in lines)
     who = f"The character ({character}) " if character else "The character "
     energy = f" Energy: {visual}." if visual else ""
+    if look: who = f"The character ({look}) "
+    place = (f" Location: {scene} - the SAME location in every shot, matching <Picture 2>." if scene else
+             " The SAME location as <Picture 2> in every shot.")
     return (f"Use <Picture 1> as the character and <Picture 2> as the location. {who}looks exactly like <Picture 1>, same face, outfit and colours. "
             f"Use <Audio 1> exactly as the song slice. The lyrics he/she sings, in order: {exact}. "
             f"Action: {shot.get('action','')}. Camera: {shot.get('camera','')}. "
             "The camera always stays in FRONT of the character, face and mouth always visible, "
-            "never behind or orbiting around the back; vary framing: close-up, medium, wide. Lip-synced." + energy)
+            "never behind or orbiting around the back; vary framing: close-up, medium, wide. Lip-synced." + place + energy)

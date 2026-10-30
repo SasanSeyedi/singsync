@@ -49,6 +49,8 @@ def main(argv=None):
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--vibe", choices=sorted(idea.VIBES), help="mini preset for music style + visual energy")
     p.add_argument("--song-model", choices=["xl", "turbo"], default="xl")
+    p.add_argument("--separate", action="store_true", help="vocal stem via Demucs on Comfy Cloud; slices + timing use the vocal")
+    p.add_argument("--look", default="", help="fixed outfit/appearance text repeated in every shot")
     p.add_argument("--plan-only", action="store_true", help="stop after plan + song + cuts (no video renders)")
     a = p.parse_args(argv); work = Path(a.work); work.mkdir(parents=True, exist_ok=True)
     character, scene = Path(a.character), Path(a.scene)
@@ -71,6 +73,13 @@ def main(argv=None):
         outputs = client.run(idea.build_song_graph(idea.song_tags(tags), plan["lyrics_text"], a.seconds, a.seed, bpm, model=a.song_model))
         client.download(_output_item(outputs, "audio"), song_path)
 
+    voice_path = song_path
+    if a.separate:
+        voice_path = work / "vocals.flac"
+        if not voice_path.exists():
+            outputs = client.run(idea.build_stem_graph(client.upload(song_path)))
+            client.download(_output_item(outputs, "audio"), voice_path)
+
     cuts_path = work / "cuts.json"
     if cuts_path.exists(): cuts = json.loads(cuts_path.read_text(encoding="utf-8"))
     else:
@@ -78,7 +87,7 @@ def main(argv=None):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         # section tags like [Verse 1] are instructions for the song model, not sung words
         sung = "\n".join(l for l in plan["lyrics_text"].splitlines() if l.strip() and not re.match(r"^\s*\[.*\]\s*$", l))
-        try: alignment = align.transcribe_words(song_path, sung, device="cpu", vad_filter=False)  # VAD drops sung words over a full mix
+        try: alignment = align.transcribe_words(voice_path, sung, device="cpu", vad_filter=False)  # VAD drops sung words over a full mix
         finally:
             if old_cuda is None: os.environ.pop("CUDA_VISIBLE_DEVICES", None)
             else: os.environ["CUDA_VISIBLE_DEVICES"] = old_cuda
@@ -90,7 +99,7 @@ def main(argv=None):
         cuts = cutplan.plan_cuts(words, analysis, duration=duration, alignment=alignment,
                                  target_owned_s=8, max_audio_s=15, allowed_durations=tuple(range(4, 16)),
                                  headroom_s=0.5)
-        slicer.slice_plan(cuts, song_path, work, fmt="wav")
+        slicer.slice_plan(cuts, voice_path, work, fmt="wav")
         # set prompts AFTER slicing: slice_plan writes its own template prompt per cut
         visual = idea.VIBES[a.vibe][2] if a.vibe else ""
         for cut in cuts["cuts"]:
@@ -101,7 +110,7 @@ def main(argv=None):
                 shot["action"] = (shot.get("action") or "") + " Instrumental part: the character dances to the music with mouth closed, not singing."
             else:
                 shot["lines"] = [text]   # the exact words in THIS cut's audio slice
-            cut["prompt"] = idea.shot_prompt(shot, plan["lyrics_text"], plan.get("character", ""), visual)
+            cut["prompt"] = idea.shot_prompt(shot, plan["lyrics_text"], plan.get("character", ""), visual, plan.get("scene", ""), a.look)
         _save_json(work / "alignment.json", alignment); _save_json(cuts_path, cuts)
 
     if a.plan_only:

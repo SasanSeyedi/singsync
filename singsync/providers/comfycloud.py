@@ -118,7 +118,8 @@ class ComfyCloud:
         if not pid: raise RuntimeError("Comfy Cloud submit response missing prompt_id")
         return str(pid)
 
-    def run(self, graph, timeout_s=2400, poll_s=10):
+    def run(self, graph, timeout_s=7200, poll_s=10):
+        # generous: on plans that run one job at a time, queued cuts wait behind each other
         """Submit any native Comfy graph and return its output dictionary."""
         pid = self.submit(graph)
         deadline = time.monotonic() + timeout_s
