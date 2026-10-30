@@ -22,8 +22,11 @@ That's the whole interface. Behind it:
 5. **SingSync again** measures how far each clip drifted off the vocal, fixes it,
    and stitches everything onto the master track with karaoke captions.
 
-Every model is **open weights** and runs through ComfyUI's own native nodes on
-Comfy Cloud. No partner nodes, no closed music service, no closed video API.
+Every model in that chain is **open weights**, and the director, song and video
+steps run through ComfyUI's own native nodes on Comfy Cloud. For the tightest
+lip-sync today, render the video step on a hosted MiniMax H3 endpoint instead
+(see Results): the open-weight route works end to end, but Comfy Cloud ships a
+compressed H3 build that drifts more.
 
 ### Vibes
 
@@ -145,7 +148,8 @@ Same song section (30 s, 4 cuts: three sung, one instrumental b-roll), same Sing
 | Video model | Cut 0 | Cut 1 | Cut 2 | Notes |
 |---|---|---|---|---|
 | Seedance 2 (kie.ai) | +0.64 s | +3.28 s | +1.68 s | sings late; one clip repeated a line (handled by repeat-aware retime) |
-| MiniMax H3 reference-to-video (kie.ai) | +0.02 s | +0.02 s | 0.00 s | follows the fed vocal closely; used for the final demo |
+| MiniMax H3 reference-to-video (kie.ai, hosted) | +0.02 s | +0.02 s | 0.00 s | follows the fed vocal closely; used for the final demo |
+| MiniMax H3 native on Comfy Cloud (pruned int8 build) | +0.80 s | +0.40 s | +2.34 s | same inputs; re-performs with its own timing and repeats lines, Retime corrects part of it |
 
 Final video: 30.000 s = 720 frames at 24 fps, master audio, karaoke captions from the real lyrics (Whisper only supplies the timing).
 
@@ -212,6 +216,12 @@ where the clip came from.
 - **Discrete clip buckets cost renderer seconds.** A 10.2s audio span becomes a
   15s clip. Narrowing the target (`--target 8 --max-clip 10 --durations 5,10`)
   trades shot length for render budget.
+- **Drift inside one clip is only partly fixed.** Retime applies one offset per
+  clip (or a splice for repeated lines). When a model changes tempo inside a
+  clip, as the compressed H3 on Comfy Cloud does, part of the clip stays off.
+- **A clip that starts singing early can freeze for a moment.** If the fix needs
+  footage from before the clip's first frame, Assemble holds the first frame.
+  Fixed-length padding is the next change.
 - **Repeated sung material is splice-retimed** from anchor clusters; ordinary
   single-cluster cuts retain the constant offset behavior.
 - **Character consistency** is whatever the reference image and the repeated
