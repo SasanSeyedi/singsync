@@ -24,6 +24,19 @@ def words_at(tokens, start=0.5, word_s=0.4, gap_s=0.1, shift=0.0):
 
 
 class EstimateOffset(unittest.TestCase):
+    def test_held_notes_do_not_create_splice(self):
+        tokens = "we can't make this song tonight and the band keeps playing".split()
+        slice_words = words_at(tokens, start=0.0, word_s=0.8, gap_s=0.4)
+        clip_words = words_at(tokens, start=0.0, word_s=0.8, gap_s=0.4)
+        # Two held words have badly delayed Whisper starts, but their ends
+        # still track the slice closely, as in the real cut.
+        for i, drift in ((1, 0.9), (7, 0.9)):
+            clip_words[i]["start"] += drift
+        result = retime.estimate_offset(clip_words, slice_words)
+        self.assertEqual(result["method"], "median")
+        self.assertNotIn("segments", result)
+        self.assertAlmostEqual(result["offset_s"], 0.0, delta=0.1)
+
     def test_repeated_line_produces_splice_segments(self):
         slice_words = words_at("one two three four five six".split(), start=0.0, word_s=0.3, gap_s=0.1)
         clip_words = words_at("one two three".split(), start=0.0, word_s=0.3, gap_s=0.1)

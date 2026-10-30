@@ -64,7 +64,11 @@ def _match(clip: list[dict], slice_: list[dict]) -> list[dict]:
                 "word": sw["word"],
                 "clip_t": round(cw["start"], 4),
                 "slice_t": round(sw["start"], 4),
-                "delta": round(cw["start"] - sw["start"], 4),
+                # Held notes can make Whisper's word starts disagree even
+                # when the word ends line up. Use whichever boundary is the
+                # better match, retaining that boundary's signed offset.
+                "delta": round(min((cw["start"] - sw["start"],
+                                     cw["end"] - sw["end"]), key=abs), 4),
             })
     return anchors
 
@@ -108,25 +112,19 @@ def estimate_offset(clip_words, slice_words, *,
         return result
 
     anchors = sorted(anchors, key=lambda a: a["slice_t"])
-    clusters = []
+    # Only contiguous runs can describe a real timing regime. Dispersed
+    # outliers are ignored as noise; nearby anchors within a run must agree.
+    runs = []
     for anchor in anchors:
-        if not clusters or anchor["delta"] - clusters[-1][-1]["delta"] > 0.5:
-            clusters.append([anchor])
+        if not runs or abs(anchor["delta"] - runs[-1][-1]["delta"]) > 0.25:
+            runs.append([anchor])
         else:
-            clusters[-1].append(anchor)
-    # A single bad anchor cannot define a splice; attach it to its nearest
-    # neighbouring cluster and repeat until every retained cluster is stable.
-    while len(clusters) > 1 and any(len(c) < 2 for c in clusters):
-        i = next(i for i, c in enumerate(clusters) if len(c) < 2)
-        target = min((j for j in range(len(clusters)) if j != i),
-                     key=lambda j: abs(statistics.median(a["delta"] for a in clusters[j])
-                                      - statistics.median(a["delta"] for a in clusters[i])))
-        clusters[target].extend(clusters[i])
-        clusters[target].sort(key=lambda a: a["slice_t"])
-        clusters.pop(i)
-        clusters.sort(key=lambda c: c[0]["slice_t"])
-
-    if len(clusters) > 1:
+            runs[-1].append(anchor)
+    clusters = [run for run in runs if len(run) >= 3]
+    if (len(clusters) > 1 and
+            any(abs(statistics.median(a["delta"] for a in left) -
+                    statistics.median(a["delta"] for a in right)) >= 0.8
+                for left, right in zip(clusters, clusters[1:]))):
         centers = [statistics.median(a["delta"] for a in c) for c in clusters]
         segments = []
         for i, (cluster, center) in enumerate(zip(clusters, centers)):
