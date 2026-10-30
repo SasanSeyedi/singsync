@@ -1,13 +1,70 @@
 # SingSync
 
-A ComfyUI custom-node pack that turns a song into a music video in which the
-character actually sings it: beat-aware cuts, one vocal slice fed to each cut,
-and a measured per-clip lip-sync correction before the timeline is assembled.
+**One picture of a character. One picture of a place. One sentence.
+Out comes a 30-second music video where your character actually sings the song.**
 
-Song (+ optional vocal stem and lyrics) in, one video out, the same length as
-the song, with the master audio on it.
+```bash
+python scripts/idea_to_video.py \
+  --character banana_guy.png --scene banana_field.png \
+  --idea "a happy song about bananas raining from the sky" \
+  --vibe happy
+```
 
-## What it does differently
+That's the whole interface. Behind it:
+
+1. **A director** (Qwen3-VL 8B) looks at both pictures and writes the song, the
+   style and a shot list.
+2. **A songwriter** (ACE-Step 1.5 XL) turns that into a real song with vocals.
+3. **SingSync** times every sung word, cuts the song on lyric lines and beats,
+   and gives each shot its own slice of the vocal.
+4. **A video model** (MiniMax H3) renders every shot with your character singing
+   that slice, camera kept in front so you can see the mouth.
+5. **SingSync again** measures how far each clip drifted off the vocal, fixes it,
+   and stitches everything onto the master track with karaoke captions.
+
+Every model is **open weights** and runs through ComfyUI's own native nodes on
+Comfy Cloud. No partner nodes, no closed music service, no closed video API.
+
+### Vibes
+
+Pick a vibe and it steers the music, the tempo and how the shots move:
+
+| `--vibe` | sounds like | looks like |
+| --- | --- | --- |
+| `happy` | sunny pop, ukulele, handclaps | bouncing, spinning, big smiles |
+| `party` | dance-pop club banger | jumping, quick push-ins, bright light |
+| `chill` | lo-fi, soft keys | swaying, slow dolly, golden hour |
+| `epic` | cinematic anthem | slow motion, sweeping crane shots |
+| `sad` | piano ballad, strings | close-ups, soft light |
+| `rap` | hip-hop, 808s | swagger, low angles |
+| `kids` | children's song, xylophone | silly dancing, colourful |
+
+Or leave it off and let the director decide from your sentence.
+
+### Already have a song?
+
+Bring your own MP3, lyrics and a character image instead; SingSync does the
+cutting, lip-sync correction and assembly. See
+[Run it without ComfyUI](#run-it-without-comfyui) and the node list below.
+
+### What you need
+
+- A Comfy Cloud account on a paid plan (API keys don't work on the free tier),
+  with `COMFY_API_KEY` set in your environment.
+- `ffmpeg` on your PATH and `pip install faster-whisper` (runs on CPU).
+- About 15–45 minutes per 30-second video, mostly waiting on the video model.
+  `--plan-only` stops after the song and cut plan so you can check them first,
+  and every run resumes where it left off.
+
+## Why the singing lines up
+
+Video models that take audio don't start singing exactly when you tell them to.
+In our demo one model sang **up to 3.3 seconds late** and repeated a line.
+SingSync listens to every rendered clip, finds the words it fed, measures the
+offset and corrects it before anything is joined, so the mouth and the song
+stay together across every cut.
+
+## How it works
 
 **Each cut is fed its own vocal slice.** Audio-driven video models sing what you
 give them. SingSync cuts the vocal into per-shot slices and hands each shot the
@@ -51,7 +108,7 @@ pip install faster-whisper     # optional: needed for transcription and retime
 `numpy` and `scipy` are already in ComfyUI. `ffmpeg` and `ffprobe` must be on
 `PATH`, or point `SINGSYNC_FFMPEG` / `SINGSYNC_FFPROBE` at them. The core
 (`singsync/`) imports no torch and no ComfyUI, so it runs and tests on its own.
-Python 3.10–3.13.
+Tested on Python 3.14.
 
 ## Nodes
 
@@ -92,7 +149,7 @@ Same song section (30 s, 4 cuts: three sung, one instrumental b-roll), same Sing
 
 Final video: 30.000 s = 720 frames at 24 fps, master audio, karaoke captions from the real lyrics (Whisper only supplies the timing).
 
-The Comfy Cloud provider (native MiniMax H3 nodes on Comfy Cloud) was verified end to end (submit, poll, download). In our tests the native graph did not yet follow the reference vocal for lip-sync the way the hosted H3 endpoint does, so treat that route as experimental for singing.
+The Comfy Cloud route (native MiniMax H3 nodes) runs end to end: submit, poll, download. With four-step turbo and no lyrics in the prompt the character mouthed nonsense; with full steps and the cut's exact lyric lines in the prompt it sings the words, re-performed with some drift that Retime then corrects. That is why the one-sentence mode always puts each cut's lyrics in its prompt.
 
 ## Run it without ComfyUI
 
@@ -162,16 +219,15 @@ where the clip came from.
   across cuts; it does nothing else to hold a face steady.
 - **Upscaling and interpolation** are left to ComfyUI's own nodes, downstream of
   Assemble.
-- **What has been verified here:** the planner, retime estimator, caption text
-  and assembly length invariant are covered by tests, and the whole chain has
-  been run end to end with faked renders. No clip in this repository was
-  rendered by a real Seedance call, so the measured offsets above are from the
-  dry run, not from the model.
+- **What has been verified:** the planner, retime estimator, caption text and
+  assembly length are covered by tests; the chain runs end to end with faked
+  renders; and it has been run with real Seedance 2 and MiniMax H3 renders (see
+  Results). No rendered media is shipped in this repository.
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .
+python -m unittest discover -s tests
 ```
 
 stdlib `unittest` only. Tests that need ffmpeg skip themselves when
@@ -188,14 +244,6 @@ the plan are uploaded as audio references. You can also render one cut from a
 saved plan with `python scripts/cloud_render_cut.py plan.json 0 --image face.png
 --image outfit.png --turbo`. The node observes `SINGSYNC_MAX_CLIPS` (default 6)
 and records submitted jobs in `singsync_spend.jsonl` under the plan work folder.
-
-## One sentence to music video
-
-```bash
-py -3.14 scripts/idea_to_video.py --character face.png --scene location.png --idea "A lonely astronaut dances beneath a neon moon" --seconds 30 --work out/moon-dance
-```
-
-The director, song and video models all use open weights: Qwen3-VL 8B, ACE-Step 1.5, MiniMax H3 and faster-whisper. The first three run on Comfy Cloud through ComfyUI native nodes; there are no partner nodes. faster-whisper runs locally on CPU. The workflow creates the song, aligns its generated lyrics, renders H3 cuts in parallel, retimes them and assembles captioned video. Install `faster-whisper` and make sure `ffmpeg`/`ffprobe` are available. Runs resume from files already present under `--work`.
 
 ## Licence
 
