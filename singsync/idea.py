@@ -65,6 +65,26 @@ def parse_director_json(value):
     return result
 
 
+VIBES = {
+    # name: (music style tags, bpm, visual energy for the shots)
+    "happy": ("upbeat sunny pop, ukulele, handclaps, bouncy bass", 110, "joyful bouncing and spinning, big smiles, gentle handheld camera"),
+    "party": ("dance-pop club banger, four-on-the-floor kick, punchy bass, handclaps", 124, "high-energy dancing and jumping, quick push-ins, bright colourful light"),
+    "chill": ("lo-fi chill pop, soft keys, mellow drums, warm", 85, "relaxed swaying, slow dolly moves, golden-hour light"),
+    "epic": ("cinematic pop anthem, big drums, soaring synths", 100, "powerful poses, slow motion, sweeping crane shots in front of the character"),
+    "sad": ("emotional piano ballad, soft strings", 72, "slow heartfelt performance, close-ups, soft light, slow push-in"),
+    "rap": ("hip-hop, hard 808s, trap hi-hats, confident rap vocal", 92, "swagger, hand gestures to camera, low-angle shots"),
+    "kids": ("cheerful children's song, simple melody, xylophone, claps", 112, "playful silly dancing, colourful, bouncy camera"),
+}
+
+
+def apply_vibe(idea, vibe):
+    """Fold a vibe preset into the one-sentence idea so the director, song and shots share it."""
+    if not vibe: return idea
+    if vibe not in VIBES: raise ValueError("unknown vibe %r; choose from %s" % (vibe, ", ".join(VIBES)))
+    tags, bpm, visual = VIBES[vibe]
+    return "%s (vibe: %s - music: %s, about %d BPM; visuals: %s)" % (idea, vibe, tags, bpm, visual)
+
+
 VOCAL_TAGS = "clear lead vocal, english lyrics, sung clearly, simple melody, vocals loud in the mix"
 
 
@@ -92,12 +112,14 @@ def format_lyrics(value):
     return text
 
 
-def shot_prompt(shot, lyrics):
+def shot_prompt(shot, lyrics, character="", visual=""):
     lines = shot.get("lines", [])
     if isinstance(lines, str): lines = [lines]
     exact = "\n".join(str(x) for x in lines)
-    return (f"Use <Picture 1> as the character and <Picture 2> as the location. "
+    who = f"The character ({character}) " if character else "The character "
+    energy = f" Energy: {visual}." if visual else ""
+    return (f"Use <Picture 1> as the character and <Picture 2> as the location. {who}looks exactly like <Picture 1>, same face, outfit and colours. "
             f"Use <Audio 1> exactly as the song slice. The lyrics he/she sings, in order: {exact}. "
             f"Action: {shot.get('action','')}. Camera: {shot.get('camera','')}. "
             "The camera always stays in FRONT of the character, face and mouth always visible, "
-            "never behind or orbiting around the back; vary framing: close-up, medium, wide. Lip-synced.")
+            "never behind or orbiting around the back; vary framing: close-up, medium, wide. Lip-synced." + energy)

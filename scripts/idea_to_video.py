@@ -4,6 +4,10 @@ import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # run from a git checkout without installing
 
 from singsync import align, assemble, cutplan, idea, retime, slicer
 from singsync.providers.comfycloud import ComfyCloud, build_h3_r2v_prompt
@@ -43,6 +47,9 @@ def main(argv=None):
     p.add_argument("--idea", required=True); p.add_argument("--seconds", type=float, default=30)
     p.add_argument("--turbo", action="store_true"); p.add_argument("--work", default="idea-video")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--vibe", choices=sorted(idea.VIBES), help="mini preset for music style + visual energy")
+    p.add_argument("--song-model", choices=["xl", "turbo"], default="xl")
+    p.add_argument("--plan-only", action="store_true", help="stop after plan + song + cuts (no video renders)")
     a = p.parse_args(argv); work = Path(a.work); work.mkdir(parents=True, exist_ok=True)
     character, scene = Path(a.character), Path(a.scene)
     client = ComfyCloud(work_dir=work)
@@ -51,14 +58,17 @@ def main(argv=None):
     if plan_path.exists(): plan = json.loads(plan_path.read_text(encoding="utf-8"))
     else:
         refs = [client.upload(character), client.upload(scene)]
-        outputs = client.run(idea.build_director_graph(*refs, a.idea, a.seed))
+        outputs = client.run(idea.build_director_graph(*refs, idea.apply_vibe(a.idea, a.vibe), a.seed))
         plan = idea.parse_director_json(_output_item(outputs, "text"))
         plan["lyrics_text"] = idea.format_lyrics(plan.get("lyrics", ""))
         _save_json(plan_path, plan)
 
     song_path = work / "song.mp3"
     if not song_path.exists():
-        outputs = client.run(idea.build_song_graph(idea.song_tags(plan.get("style_tags", "")), plan["lyrics_text"], a.seconds, a.seed, plan.get("bpm", 120)))
+        tags = plan.get("style_tags", "")
+        bpm = plan.get("bpm", 120)
+        if a.vibe: tags, bpm = idea.VIBES[a.vibe][0] + ", " + str(tags), idea.VIBES[a.vibe][1]
+        outputs = client.run(idea.build_song_graph(idea.song_tags(tags), plan["lyrics_text"], a.seconds, a.seed, bpm, model=a.song_model))
         client.download(_output_item(outputs, "audio"), song_path)
 
     cuts_path = work / "cuts.json"
@@ -66,11 +76,13 @@ def main(argv=None):
     else:
         old_cuda = os.environ.get("CUDA_VISIBLE_DEVICES")
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-        try: alignment = align.transcribe_words(song_path, plan["lyrics_text"], device="cpu")
+        # section tags like [Verse 1] are instructions for the song model, not sung words
+        sung = "\n".join(l for l in plan["lyrics_text"].splitlines() if l.strip() and not re.match(r"^\s*\[.*\]\s*$", l))
+        try: alignment = align.transcribe_words(song_path, sung, device="cpu", vad_filter=False)  # VAD drops sung words over a full mix
         finally:
             if old_cuda is None: os.environ.pop("CUDA_VISIBLE_DEVICES", None)
             else: os.environ["CUDA_VISIBLE_DEVICES"] = old_cuda
-        words = align.apply_lyrics(alignment["words"], plan["lyrics_text"])
+        words = align.apply_lyrics(alignment["words"], sung)
         alignment["words"] = words
         alignment["lines"] = align.build_alignment(words)["lines"]
         analysis = None
@@ -78,11 +90,22 @@ def main(argv=None):
         cuts = cutplan.plan_cuts(words, analysis, duration=duration, alignment=alignment,
                                  target_owned_s=8, max_audio_s=15, allowed_durations=tuple(range(4, 16)),
                                  headroom_s=0.5)
-        for cut in cuts["cuts"]:
-            cut["prompt"] = idea.shot_prompt(_shot_for(cut, plan.get("shots") or [{}]), plan["lyrics_text"])
         slicer.slice_plan(cuts, song_path, work, fmt="wav")
+        # set prompts AFTER slicing: slice_plan writes its own template prompt per cut
+        visual = idea.VIBES[a.vibe][2] if a.vibe else ""
+        for cut in cuts["cuts"]:
+            shot = dict(_shot_for(cut, plan.get("shots") or [{}]))
+            text = re.sub(r"\[[^\]]*\]\s*/?\s*", "", str(cut.get("line_text") or "")).strip(" /")
+            if cut.get("kind") == "broll" or not text:
+                shot["lines"] = []
+                shot["action"] = (shot.get("action") or "") + " Instrumental part: the character dances to the music with mouth closed, not singing."
+            else:
+                shot["lines"] = [text]   # the exact words in THIS cut's audio slice
+            cut["prompt"] = idea.shot_prompt(shot, plan["lyrics_text"], plan.get("character", ""), visual)
         _save_json(work / "alignment.json", alignment); _save_json(cuts_path, cuts)
 
+    if a.plan_only:
+        print("plan-only: %d cuts -> %s" % (len(cuts["cuts"]), cuts_path.resolve())); return
     images = [client.upload(character), client.upload(scene)]
     def render(cut):
         clip = work / "renders" / ("cut_%04d.mp4" % cut["idx"])
