@@ -83,7 +83,17 @@ ACE-Step outputs a full mix; SingSync aligns the known lyrics against it. For be
 
 ## Results from the demo
 
-In an observed 30 s run, four cuts were used (clips of 15/10/10/5 s; cut 0 was re-rendered at 15 s after the first take came out loose). Measured lip-sync offsets were +0.64 s, +3.28 s and +1.68 s per vocal cut; Seedance sang late, and a repeated line in one clip was handled by repeat-aware retime. The final video was 30.000 s (720 frames at 24 fps), with captions generated from the lyrics.
+Same song section (30 s, 4 cuts: three sung, one instrumental b-roll), same SingSync plan, two video models. Offsets are what SingSync measured per clip by matching the words in the clip against the words in the vocal slice it was fed:
+
+| Video model | Cut 0 | Cut 1 | Cut 2 | Notes |
+|---|---|---|---|---|
+| Seedance 2 (kie.ai) | +0.64 s | +3.28 s | +1.68 s | sings late; one clip repeated a line (handled by repeat-aware retime) |
+| MiniMax H3 reference-to-video (kie.ai) | +0.02 s | +0.02 s | 0.00 s | follows the fed vocal closely; used for the final demo |
+
+Final video: 30.000 s = 720 frames at 24 fps, master audio, karaoke captions from the real lyrics (Whisper only supplies the timing).
+
+The Comfy Cloud provider (native MiniMax H3 nodes on Comfy Cloud) was verified end to end (submit, poll, download). In our tests the native graph did not yet follow the reference vocal for lip-sync the way the hosted H3 endpoint does, so treat that route as experimental for singing.
+
 ## Run it without ComfyUI
 
 ```bash
