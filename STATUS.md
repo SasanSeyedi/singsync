@@ -9,14 +9,16 @@ no ComfyUI, torch, GPU or network needed to run or test the core.
 python -m unittest discover -s tests -t .
 ```
 
-**Result: `Ran 141 tests` — OK, 0 failures, 0 skipped** (on a machine with
-ffmpeg; tests needing ffmpeg skip themselves without it).
+**Result: `Ran 144 tests` — OK, 0 failures.** One test skips when
+`faster-whisper` *is* installed (it checks the error message for when it is
+not); tests needing ffmpeg skip themselves when ffmpeg is absent. Whole suite:
+27 seconds.
 
 | Module | Tests | Covers |
 | --- | --- | --- |
 | `test_cutplan` | 22 | Tiling, audio-span containment, max span, duration buckets, overlap words, line-end preference, b-roll regions, beat snapping, validator |
 | `test_retime` | 24 | `estimate_offset` on ±1.7s shifts, dropouts, extras, outliers, drift→piecewise, rejection; clip baking keeps length |
-| `test_align` | 18 | Word cleaning, monotonicity repair, lyric alignment with mishearings and dropouts, load/save |
+| `test_align` | 21 | Word cleaning, monotonicity repair, lyric alignment with mishearings and dropouts, load/save, the faster-whisper call and attribute shape (stubbed) |
 | `test_captions` | 14 | ASS header, `\k` durations, gap spacers, line grouping, escaping, presets |
 | `test_assemble` | 13 | Frame grid, clip-time mapping, and the length invariant on lavfi slates (24 and 30 fps, with and without offsets, with captions) |
 | `test_beats` | 13 | Snapping rules on synthetic words; tempo and grid on a generated click track |
@@ -85,12 +87,17 @@ Both the `--demo` and the `--song` paths were run, plus resuming from
   evidence above is an lavfi slate. The provider client has its own unit tests
   with a stub transport, but no live kie.ai call was made, so response-shape
   surprises are possible.
-- **faster-whisper is not installed here**, so `transcribe_words` has never been
-  run against audio in this environment, and the dry run simulates the clip
-  transcripts (same estimator, synthetic input). The lyric-alignment logic that
-  consumes whisper output *is* tested on synthetic word lists. This is the
-  biggest untested seam: the first real run should check that whisper's word
-  timings on a short clip are good enough for the median to be meaningful.
+- **No real transcription has been run.** `faster-whisper` installs cleanly and
+  the call we make, the attributes we read off its segments and words, and the
+  model caching are pinned by a stub test — but the model weights could not be
+  downloaded in the build environment (`huggingface.co` is blocked by its
+  network policy), so whisper has never actually decoded audio here. Speech was
+  synthesised with espeak-ng for exactly that test and the run got no further
+  than the download. This remains the biggest untested seam: the first real run
+  should check that whisper's word timings on a 10-second clip are tight enough
+  for the median offset to mean something. Everything downstream of the word
+  list is tested on synthetic words, and the dry run simulates the clip
+  transcripts (same estimator, synthetic input).
 - **The nodes have not been loaded inside ComfyUI.** Registration, the input/
   output contract and the workflow JSON are checked against the classes, but no
   ComfyUI instance has imported the pack. The `AUDIO` tensor path is tested with

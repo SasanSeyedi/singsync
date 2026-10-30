@@ -131,6 +131,91 @@ class LoadSave(unittest.TestCase):
             align.load_alignment({"words": "nope"})
 
 
+class FakeWord:
+    def __init__(self, word, start, end):
+        self.word, self.start, self.end = word, start, end
+
+
+class FakeSegment:
+    def __init__(self, words):
+        self.words = [FakeWord(*w) for w in words]
+
+
+class FakeInfo:
+    language = "en"
+    duration = 6.0
+
+
+class WhisperInterface(unittest.TestCase):
+    """How ``transcribe_words`` consumes faster-whisper's objects.
+
+    This pins the shape of the call and of the segment/word attributes we read.
+    It is a stub, not a transcription: it says nothing about whisper's accuracy.
+    """
+
+    def setUp(self):
+        import sys
+        import types
+        self.calls = []
+        module = types.ModuleType("faster_whisper")
+        test = self
+
+        class WhisperModel:
+            def __init__(self, model, device="cpu", compute_type="int8"):
+                test.calls.append(("init", model, device, compute_type))
+
+            def transcribe(self, path, **kw):
+                test.calls.append(("transcribe", path, kw))
+                return ([FakeSegment([("I", 0.5, 0.8), (" walk", 0.9, 1.3)]),
+                         FakeSegment([(" the", 1.4, 1.6), (" wire", 1.7, 2.2)])],
+                        FakeInfo())
+
+        module.WhisperModel = WhisperModel
+        self.previous = sys.modules.get("faster_whisper")
+        sys.modules["faster_whisper"] = module
+        align._MODEL_CACHE.clear()
+        self.sys = sys
+
+    def tearDown(self):
+        if self.previous is None:
+            self.sys.modules.pop("faster_whisper", None)
+        else:
+            self.sys.modules["faster_whisper"] = self.previous
+        align._MODEL_CACHE.clear()
+
+    def test_words_and_metadata_come_through(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audio = Path(tmp) / "vocals.wav"
+            audio.write_bytes(b"stub")
+            out = align.transcribe_words(audio, "I walk the wire",
+                                         model="tiny.en", device="cpu")
+        self.assertEqual([w["word"] for w in out["words"]],
+                         ["I", "walk", "the", "wire"])
+        self.assertEqual(out["words"][0]["start"], 0.5)
+        self.assertEqual(out["model"], "tiny.en")
+        self.assertEqual(out["language"], "en")
+        self.assertEqual(out["audio_duration"], 6.0)
+        self.assertTrue(out["lyrics_used"])
+        self.assertEqual(len(out["lines"]), 1)
+
+    def test_word_timestamps_are_requested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audio = Path(tmp) / "v.wav"
+            audio.write_bytes(b"stub")
+            align.transcribe_words(audio, model="tiny.en", device="cpu")
+        kinds = [c[0] for c in self.calls]
+        self.assertEqual(kinds, ["init", "transcribe"])
+        self.assertTrue(self.calls[1][2]["word_timestamps"])
+
+    def test_the_model_is_cached_between_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            audio = Path(tmp) / "v.wav"
+            audio.write_bytes(b"stub")
+            align.transcribe_words(audio, model="tiny.en", device="cpu")
+            align.transcribe_words(audio, model="tiny.en", device="cpu")
+        self.assertEqual([c[0] for c in self.calls].count("init"), 1)
+
+
 class MissingDependency(unittest.TestCase):
     def test_clear_error_when_faster_whisper_is_absent(self):
         try:
