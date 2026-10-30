@@ -167,6 +167,18 @@ python -m unittest discover -s tests -t .
 stdlib `unittest` only. Tests that need ffmpeg skip themselves when
 it is absent; nothing needs ComfyUI, torch, a GPU or a network.
 
+## Render on Comfy Cloud with MiniMax H3 (open weights)
+
+The `SingSync Render (Comfy Cloud, MiniMax H3)` node sends each planned cut to
+Comfy Cloud using ComfyUI's native MiniMax H3 reference-to-video nodes. It uses
+the open-weight H3 model and optional four-step turbo LoRA. Set `COMFY_API_KEY`
+in the environment, connect a SingSync plan, and provide one or more local
+reference image paths as a semicolon-separated list. The cut vocal slices in
+the plan are uploaded as audio references. You can also render one cut from a
+saved plan with `python scripts/cloud_render_cut.py plan.json 0 --image face.png
+--image outfit.png --turbo`. The node observes `SINGSYNC_MAX_CLIPS` (default 6)
+and records submitted jobs in `singsync_spend.jsonl` under the plan work folder.
+
 ## Licence
 
 MIT. All code in this repository was written for it.

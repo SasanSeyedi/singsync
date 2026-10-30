@@ -416,4 +416,14 @@ except ImportError:
 except Exception as exc:  # pragma: no cover - defensive
     print("[SingSync] kie.ai provider node not loaded: %s" % exc)
 
+try:
+    from .providers.comfycloud_node import (NODE_CLASS_MAPPINGS as _CLOUD_CLASSES,
+                                            NODE_DISPLAY_NAME_MAPPINGS as _CLOUD_NAMES)
+    NODE_CLASS_MAPPINGS.update(_CLOUD_CLASSES)
+    NODE_DISPLAY_NAME_MAPPINGS.update(_CLOUD_NAMES)
+except ImportError:
+    pass
+except Exception as exc:  # pragma: no cover - defensive
+    print("[SingSync] Comfy Cloud provider node not loaded: %s" % exc)
+
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

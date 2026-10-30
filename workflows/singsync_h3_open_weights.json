@@ -1,0 +1,33 @@
+{
+  "id": "singsync-h3-open-weights",
+  "revision": 0,
+  "last_node_id": 1,
+  "last_link_id": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "SingSyncComfyCloudH3",
+      "pos": [300, 200],
+      "size": [360, 220],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [
+        {"name": "plan", "type": "SINGSYNC_PLAN", "link": null},
+        {"name": "turbo", "type": "BOOLEAN", "link": null},
+        {"name": "width", "type": "INT", "link": null},
+        {"name": "height", "type": "INT", "link": null},
+        {"name": "dry_run", "type": "BOOLEAN", "link": null},
+        {"name": "image_paths", "type": "STRING", "link": null}
+      ],
+      "outputs": [{"name": "plan", "type": "SINGSYNC_PLAN", "links": null}],
+      "properties": {"Node name for S&R": "SingSyncComfyCloudH3"},
+      "widgets_values": [true, 1344, 768, false, "character.png;character_alt.png"]
+    }
+  ],
+  "links": [],
+  "groups": [],
+  "config": {},
+  "extra": {"workflowRendererVersion": "LG"},
+  "version": 0.4
+}
