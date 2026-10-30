@@ -1,4 +1,4 @@
-"""Local audio analysis and beat-aware cut snapping for the WVRPS MV engine."""
+"""Local audio analysis and beat-aware cut snapping for SingSync."""
 from __future__ import annotations
 
 import argparse
